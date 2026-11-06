@@ -97,7 +97,7 @@ def generate_plots(
     ax1.set_xticks(x)
     ax1.set_xticklabels(short_names, rotation=30, ha="right", fontsize=8.5)
     ax1.set_ylabel("Score / Loss")
-    ax1.set_title("EcoGate-Audio: Routing Policy Comparison at Matched Target Budget")
+    ax1.set_title("EcoGate-Audio: Routing Policies Under a Maximum Call-Rate Cap")
     ax1.legend(loc="upper right")
     ax1.grid(axis="y", alpha=0.25)
     fig.tight_layout()
@@ -260,13 +260,13 @@ def write_summary_markdown_reports(
     (results_dir / "routing_comparison.md").write_text(
         f"""# Cost-Aware Expert Routing Comparison & Ablation Report (`results/routing_comparison.md`)
 
-## 1. Ten-Policy Routing Comparison on Held-Out Test Split (Matched Target Budget = 25%)
+## 1. Ten-Policy Routing Comparison on Held-Out Test Split (Maximum Call-Rate Cap = 25%)
 
 | Routing Policy | Expert Call Rate | Expected Decision Loss | Group Bootstrap 95% CI | Loss Reduction vs. Student | Improvement per Expert Call | Known-Species Macro-F1 | Avg. Compute Cost Units | Deployable |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 {rt_rows}
 
-*Note*: `offline_oracle_upper_bound` uses ground-truth test loss reductions and is included strictly as a theoretical lower-loss bound, never as a deployable router.
+*Notes*: `offline_oracle_upper_bound` uses ground-truth test loss reductions and is never deployable. Target call rate is a cap; realized rates can be lower. Expert cost is constant per call, so the cost multiplier changes the invocation threshold, not sample ranking. The proposed policy also applies a pre-expert bird-activity gate; do not interpret any difference as evidence of heterogeneous per-sample cost optimization.
 
 ## 2. Matched Expert-Call Budget Sweep
 
