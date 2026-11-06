@@ -30,7 +30,7 @@ def main() -> None:
         "--allow-synthetic-fixture", action="store_true",
         help="Explicitly generate/use synthetic reference data for smoke tests only.",
     )
-    args = parser.parse_args()
+    args, _unknown = parser.parse_known_args()
     cfg_path = PROJECT_ROOT / "configs" / "data" / "dataset.yaml"
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     ratios = cfg["splitting"]["ratios"]
