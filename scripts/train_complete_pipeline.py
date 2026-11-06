@@ -8,6 +8,8 @@ and writes all 6 required Markdown summary reports in `results/`.
 """
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import os
 import sys
@@ -327,6 +329,18 @@ def write_summary_markdown_reports(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run EcoGate-Audio research experiments on a mounted real dataset.")
+    parser.add_argument("--force-rebuild-cache", action="store_true", help="Rebuild cached features from the current split manifest.")
+    args = parser.parse_args()
+
+    raw_dir = PROJECT_ROOT / "data" / "raw"
+    synthetic_marker = raw_dir / ".ecogate_synthetic_reference_fixture"
+    if synthetic_marker.exists():
+        raise SystemExit(
+            "Research training is blocked: data/raw is marked as a synthetic reference fixture. "
+            "Remove the fixture and mount the real source archive before running publication experiments."
+        )
+
     print("=== [EcoGate-Audio] Starting Complete End-to-End Pipeline ===")
     run_audit()
     run_duplicates()
@@ -337,25 +351,50 @@ def main() -> None:
     run_validate()
 
     features_cache = PROJECT_ROOT / "data" / "features" / "features_cache.pkl"
-    if features_cache.exists():
-        print(f"=== [EcoGate-Audio] Loading cached acoustic features from {features_cache} ===", flush=True)
+    cache_meta = features_cache.with_suffix(".meta.json")
+    split_csv = PROJECT_ROOT / "data" / "splits" / "group_splits_manifest.csv"
+    if not split_csv.exists():
+        raise SystemExit(f"Split manifest not found: {split_csv}. Run the real-data audit and split steps first.")
+    manifest_sha = hashlib.sha256(split_csv.read_bytes()).hexdigest()
+    cache_valid = False
+    if features_cache.exists() and cache_meta.exists() and not args.force_rebuild_cache:
+        try:
+            meta = json.loads(cache_meta.read_text(encoding="utf-8"))
+            cache_valid = (
+                meta.get("manifest_sha256") == manifest_sha
+                and meta.get("dataset_source_type") == "local_archive_source_unverified"
+            )
+        except (OSError, json.JSONDecodeError):
+            cache_valid = False
+
+    if cache_valid:
+        print(f"=== [EcoGate-Audio] Loading manifest-matched acoustic cache from {features_cache} ===", flush=True)
         import pickle
         with open(features_cache, "rb") as f:
             all_samples = pickle.load(f)
-        print(f"[load_dataset] Loaded {len(all_samples)} samples from cache.", flush=True)
     else:
+        if features_cache.exists():
+            print("[load_dataset] Ignoring stale/unverified feature cache; rebuilding from current manifest.", flush=True)
         print("=== [EcoGate-Audio] Loading Dataset and Manifest ===", flush=True)
-        split_csv = PROJECT_ROOT / "data" / "splits" / "group_splits_manifest.csv"
-        raw_dir = PROJECT_ROOT / "data" / "raw"
         all_samples = load_dataset_from_manifest(split_csv, raw_dir)
         try:
             features_cache.parent.mkdir(parents=True, exist_ok=True)
             import pickle
             with open(features_cache, "wb") as f:
                 pickle.dump(all_samples, f, protocol=pickle.HIGHEST_PROTOCOL)
-            print(f"[load_dataset] Cached {len(all_samples)} samples to {features_cache}.", flush=True)
+            cache_meta.write_text(json.dumps({
+                "manifest_sha256": manifest_sha,
+                "dataset_source_type": "local_archive_source_unverified",
+                "cache_format_version": 2,
+            }, indent=2), encoding="utf-8")
+            print(f"[load_dataset] Cached {len(all_samples)} manifest-matched samples.", flush=True)
         except Exception as exc:
-            print(f"[load_dataset] Warning: failed to write features cache: {exc}", flush=True)
+            print(f"[load_dataset] Warning: failed to write feature cache and metadata: {exc}", flush=True)
+
+    if any(getattr(sample, "source_type", "unknown") == "synthetic_reference_fixture" for sample in all_samples):
+        raise SystemExit("Synthetic fixture samples detected in cache; refusing research evaluation.")
+    if not all_samples:
+        raise SystemExit("No valid samples loaded from the audited manifest.")
 
     train_s = [s for s in all_samples if s.split == "train"]
     val_s = [s for s in all_samples if s.split == "val"]
