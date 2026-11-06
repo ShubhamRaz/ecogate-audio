@@ -17,6 +17,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import yaml
+
 os.environ.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
 import matplotlib
 matplotlib.use("Agg")
@@ -250,7 +252,7 @@ def write_summary_markdown_reports(
         for k, v in routing_comparison.items()
     )
     bs_rows = "\n".join(
-        f"| {b['target_budget_rate']:.2f} | {b['confidence_loss']:.4f} | {b['entropy_loss']:.4f} | {b['proposed_cost_aware_loss']:.4f} | {b['proposed_macro_f1']:.4f} |"
+        f"| {b['target_budget_rate']:.2f} | {b['proposed_call_rate']:.4f} | {b['confidence_loss']:.4f} | {b['entropy_loss']:.4f} | {b['proposed_cost_aware_loss']:.4f} | {b['proposed_macro_f1']:.4f} |"
         for b in budget_sweep
     )
     ab_rows = "\n".join(
@@ -268,10 +270,10 @@ def write_summary_markdown_reports(
 
 *Notes*: `offline_oracle_upper_bound` uses ground-truth test loss reductions and is never deployable. Target call rate is a cap; realized rates can be lower. Expert cost is constant per call, so the cost multiplier changes the invocation threshold, not sample ranking. The proposed policy also applies a pre-expert bird-activity gate; do not interpret any difference as evidence of heterogeneous per-sample cost optimization.
 
-## 2. Matched Expert-Call Budget Sweep
+## 2. Maximum Call-Rate Cap Sweep
 
-| Target Expert Call Rate | Fixed-Confidence Loss | Entropy Routing Loss | Proposed Cost-Aware Loss | Proposed Known-Species Macro-F1 |
-| :---: | :---: | :---: | :---: | :---: |
+| Maximum Expert Call-Rate Cap | Proposed Actual Call Rate | Fixed-Confidence Loss | Entropy Routing Loss | Budgeted Benefit Loss | Known-Species Macro-F1 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
 {bs_rows}
 
 ## 3. Routing Feature & Component Ablation Study
@@ -333,6 +335,25 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run EcoGate-Audio research experiments on a mounted real dataset.")
     parser.add_argument("--force-rebuild-cache", action="store_true", help="Rebuild cached features from the current split manifest.")
     args = parser.parse_args()
+
+    routing_document = yaml.safe_load(
+        (PROJECT_ROOT / "configs" / "routing" / "routing.yaml").read_text(encoding="utf-8")
+    ) or {}
+    routing_cfg = routing_document.get("routing", {})
+    optimization_cfg = routing_cfg.get("optimization_constraints", {})
+    cost_cfg = routing_cfg
+    budget_config = BudgetPolicyConfig(
+        max_expert_call_rate=float(optimization_cfg.get("max_expert_call_rate", 0.30)),
+        max_average_energy_units=float(optimization_cfg.get("max_average_energy_units", 2.40)),
+        student_cost_units=float(cost_cfg.get("estimated_student_cost_units", 1.0)),
+        expert_cost_units=float(cost_cfg.get("estimated_expert_cost_units", 4.5)),
+        router_overhead_units=float(cost_cfg.get("router_overhead_cost_units", 0.05)),
+        min_bird_recall=float(optimization_cfg.get("min_bird_recall", 0.80)),
+        min_known_coverage=float(optimization_cfg.get("min_known_coverage", 0.70)),
+        max_false_known_on_unknown=float(optimization_cfg.get("max_false_known_on_unknown", 0.20)),
+    )
+    lambda_cost = float(cost_cfg.get("lambda_cost_tradeoff", 0.01))
+    bird_activity_threshold = float(routing_cfg.get("thresholds", {}).get("bird_activity_min", 0.35))
 
     raw_dir = PROJECT_ROOT / "data" / "raw"
     synthetic_marker = raw_dir / ".ecogate_synthetic_reference_fixture"
@@ -531,6 +552,9 @@ def main() -> None:
         cal_e_loss=cal_e_loss,
         benefit_estimator=benefit_est,
         target_call_rate=0.25,
+        lambda_cost=lambda_cost,
+        bird_activity_threshold=bird_activity_threshold,
+        budget_config=budget_config,
         seed=42,
     )
 
@@ -550,10 +574,14 @@ def main() -> None:
             cal_e_loss=cal_e_loss,
             benefit_estimator=benefit_est,
             target_call_rate=br,
+            lambda_cost=lambda_cost,
+            bird_activity_threshold=bird_activity_threshold,
+            budget_config=budget_config,
             seed=42,
         )
         budget_sweep.append({
             "target_budget_rate": br,
+            "proposed_call_rate": rc_b["proposed_cost_aware_routing"]["expert_call_rate"],
             "confidence_loss": rc_b["fixed_confidence_routing"]["expected_decision_loss"],
             "entropy_loss": rc_b["entropy_routing"]["expected_decision_loss"],
             "proposed_cost_aware_loss": rc_b["proposed_cost_aware_routing"]["expected_decision_loss"],
@@ -564,13 +592,13 @@ def main() -> None:
     print("=== [Step 9/11] Feature & Architectural Ablation Studies ===", flush=True)
     ablation_results = [
         {
-            "ablation_variant": "Full Proposed Cost-Aware Router (Uncertainty + Prototype + Bird Gate + SNR)",
+            "ablation_variant": "Budgeted Benefit Router (Uncertainty + Prototype + Pre-Expert Bird Gate + SNR)",
             "expected_decision_loss": routing_comparison["proposed_cost_aware_routing"]["expected_decision_loss"],
             "known_species_macro_f1": routing_comparison["proposed_cost_aware_routing"]["known_species_macro_f1"],
             "expert_call_rate": routing_comparison["proposed_cost_aware_routing"]["expert_call_rate"],
         },
         {
-            "ablation_variant": "w/o Cost Penalty & Bird Activity Gate (Cost-Blind Benefit Router)",
+            "ablation_variant": "Cost-Blind Benefit Router (No Cost Floor or Bird Gate)",
             "expected_decision_loss": routing_comparison["cost_blind_benefit_routing"]["expected_decision_loss"],
             "known_species_macro_f1": routing_comparison["cost_blind_benefit_routing"]["known_species_macro_f1"],
             "expert_call_rate": routing_comparison["cost_blind_benefit_routing"]["expert_call_rate"],
