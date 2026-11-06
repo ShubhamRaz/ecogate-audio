@@ -6,8 +6,7 @@ Audio classification models for EcoGate-Audio:
 3. StrongExpertAudioModel: Handcrafted multi-statistic spectral features, fixed random attention
    projections, a partially ridge-initialized embedding projection, and optimized output heads.
 
-Supports native NumPy/SciPy execution for guaranteed reproducibility across CPU/edge environments
-No end-to-end neural backbone is trained by the current NumPy/SciPy implementations.
+The current implementations use NumPy/SciPy only. No end-to-end neural backbone is trained.
 """
 from __future__ import annotations
 
@@ -181,8 +180,8 @@ class LightweightStudentCNN:
 
     def _extract_raw_conv_features(self, mels: np.ndarray) -> np.ndarray:
         """
-        Compute fast 2D depthwise-separable spectral-temporal features over batch of Log-Mel
-        spectrograms of shape (N, M, T).
+        Compute pooled per-band means/stds and temporal-difference summaries for
+        Log-Mel batches of shape (N, M, T). No learned convolution is performed.
         """
         # Coarse 16-subband pooling repeated to M (lightweight low-resolution student filterbank)
         coarse_splits = np.array_split(mels, 4, axis=1)
