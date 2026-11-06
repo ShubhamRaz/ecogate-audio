@@ -270,6 +270,7 @@ def evaluate_routing_policies_on_split(
         ci_loss = group_bootstrap_ci(test_arr["groups"], combined_loss)
 
         results[pname] = {
+            "expert_invoke_mask": mask.astype(bool).tolist(),
             "expert_call_rate": round(call_rate, 4),
             "expected_decision_loss": round(mean_loss, 4),
             "loss_ci_95": [ci_loss["ci_low"], ci_loss["ci_high"]],
