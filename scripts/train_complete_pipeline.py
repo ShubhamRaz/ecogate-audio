@@ -577,6 +577,8 @@ def main() -> None:
             target_call_rate=br,
             lambda_cost=lambda_cost,
             bird_activity_threshold=bird_activity_threshold,
+            min_snr_db=float(routing_cfg.get("thresholds", {}).get("audio_quality_min_snr_db", -3.0)),
+            max_clipping_ratio=float(routing_cfg.get("thresholds", {}).get("max_clipping_ratio", 0.08)),
             budget_config=budget_config,
             seed=42,
         )
@@ -693,6 +695,7 @@ def main() -> None:
     # only the planned subset into the router, as a real deployment should do.
     bc = BudgetController(budget_config)
     bc.calibrated_threshold = routing_comparison["proposed_cost_aware_routing"]["calibrated_threshold"]
+    bc.calibrated_max_call_rate = routing_comparison["proposed_cost_aware_routing"]["effective_max_call_rate"]
     ca_router = CostAwareRouter(
         benefit_est,
         bc,
