@@ -124,7 +124,11 @@ class CostAwareRouter:
         energy_rate = (
             cfg.max_average_energy_units - cfg.student_cost_units - cfg.router_overhead_units
         ) / max(cfg.expert_cost_units, 1e-12)
-        cap_rate = min(max(0.0, cfg.max_expert_call_rate), max(0.0, energy_rate))
+        cap_rate = min(
+            max(0.0, cfg.max_expert_call_rate),
+            max(0.0, energy_rate),
+            max(0.0, float(self.budget_controller.calibrated_max_call_rate)),
+        )
         cumulative_budget = int(np.floor(cap_rate * (self.budget_controller.total_queries + n) + 1e-12))
         slots = max(0, cumulative_budget - self.budget_controller.expert_calls)
         candidates = np.flatnonzero(eligible)
