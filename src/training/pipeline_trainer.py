@@ -186,6 +186,8 @@ def evaluate_routing_policies_on_split(
     target_call_rate: float = 0.25,
     lambda_cost: float = 0.01,
     bird_activity_threshold: float = 0.35,
+    min_snr_db: float = -3.0,
+    max_clipping_ratio: float = 0.08,
     budget_config: Optional[BudgetPolicyConfig] = None,
     seed: int = 42,
 ) -> Dict[str, Dict[str, Any]]:
@@ -273,7 +275,13 @@ def evaluate_routing_policies_on_split(
         "margin_routing": mar_r.route(s_nov_feats["raw_margin"]),
         "prototype_distance_routing": proto_r.route(s_nov_feats["prototype_distance"]),
         "cost_blind_benefit_routing": est_b_test > cb_bc.calibrated_threshold,
-        "proposed_cost_aware_routing": (est_b_test > ca_bc.calibrated_threshold) & (s_out.bird_activity_prob > bird_activity_threshold),
+        "proposed_cost_aware_routing": (
+            (est_b_test > ca_bc.calibrated_threshold)
+            & (s_out.bird_activity_prob > bird_activity_threshold)
+            & (test_arr["snr_db"] >= min_snr_db)
+            & (test_arr["clipping_ratio"] <= max_clipping_ratio)
+            & (test_arr["rms_energy"] >= 0.0002)
+        ),
         "offline_oracle_upper_bound": oracle_mask,
     }
 
@@ -304,6 +312,12 @@ def evaluate_routing_policies_on_split(
 
         results[pname] = {
             "expert_invoke_mask": mask.astype(bool).tolist(),
+            "calibrated_threshold": (
+                float(ca_bc.calibrated_threshold) if pname == "proposed_cost_aware_routing"
+                else float(cb_bc.calibrated_threshold) if pname == "cost_blind_benefit_routing"
+                else None
+            ),
+            "effective_max_call_rate": round(effective_target_rate, 6),
             "expert_call_rate": round(call_rate, 4),
             "expected_decision_loss": round(mean_loss, 4),
             "loss_ci_95": [ci_loss["ci_low"], ci_loss["ci_high"]],
