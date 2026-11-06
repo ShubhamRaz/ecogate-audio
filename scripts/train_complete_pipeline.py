@@ -554,8 +554,18 @@ def main() -> None:
     te_s_loss = compute_sample_loss(te_s_out.probabilities, te_s_out.bird_activity_prob, te_arr["y_known"], te_arr["is_bird"])
     te_e_loss = compute_sample_loss(te_e_out.probabilities, te_e_out.bird_activity_prob, te_arr["y_known"], te_arr["is_bird"])
     rc_student = compute_risk_coverage_curve(te_s_nov["raw_max_prob"], te_s_loss)
-    routed_loss = np.where(te_s_nov["entropy"] > 0.45, te_e_loss, te_s_loss)
-    rc_routed = compute_risk_coverage_curve(np.maximum(te_s_nov["raw_max_prob"], np.max(te_e_out.probabilities, axis=1)), routed_loss)
+    # Evaluate the actual calibrated benefit-router decisions, not an unrelated
+    # entropy heuristic or an expert confidence score when the expert was not called.
+    routed_mask = np.asarray(
+        routing_comparison["proposed_cost_aware_routing"]["expert_invoke_mask"],
+        dtype=bool,
+    )
+    routed_loss = np.where(routed_mask, te_e_loss, te_s_loss)
+    routed_probabilities = np.where(
+        routed_mask[:, None], te_e_out.probabilities, te_s_out.probabilities
+    )
+    routed_confidence = np.max(routed_probabilities, axis=1)
+    rc_routed = compute_risk_coverage_curve(routed_confidence, routed_loss)
 
     # 8. Hardware & Energy Benchmarking
     bench_s = benchmark_model_inference(student, te_arr["mels"])
