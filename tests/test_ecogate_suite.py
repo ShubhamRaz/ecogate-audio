@@ -20,6 +20,7 @@ from src.audit.auditor import (
     verify_split_integrity,
 )
 from src.calibration.calibrator import TemperatureScaler, compute_brier_score, compute_ece
+from src.evaluation.evaluator import compute_binary_auroc_aupr_fpr95, compute_risk_coverage_curve
 from src.datasets.bird_dataset import (
     FeatureNormalizer,
     generate_reference_validation_archive,
@@ -182,6 +183,24 @@ class TestEcoGateAudioSuite(unittest.TestCase):
         e_loss = s_loss - d_obs
         opt = bc.optimize_threshold_on_calibration(est.predict_benefit(Z), s_loss, e_loss, target_call_rate=0.25)
         self.assertLessEqual(opt["calibration_call_rate"], 0.30)
+        self.assertLessEqual(opt["calibration_call_rate"], opt["effective_max_call_rate"])
+        self.assertGreaterEqual(opt["calibrated_threshold"], opt["cost_floor"])
+
+        # A requested target is a cap, not permission to exceed configured limits.
+        capped = BudgetController(BudgetPolicyConfig(
+            max_expert_call_rate=0.20,
+            max_average_energy_units=10.0,
+            expert_cost_units=1.0,
+        ))
+        capped_result = capped.optimize_threshold_on_calibration(
+            np.linspace(0.0, 1.0, 100),
+            np.ones(100),
+            np.zeros(100),
+            lambda_cost=0.0,
+            target_call_rate=0.90,
+        )
+        self.assertLessEqual(capped_result["effective_max_call_rate"], 0.20)
+        self.assertLessEqual(capped_result["calibration_call_rate"], 0.20)
 
     def test_07_quantization_and_api_endpoints(self) -> None:
         """Test INT8 quantization/recalibration and all 7 FastAPI endpoints."""
@@ -220,6 +239,108 @@ class TestEcoGateAudioSuite(unittest.TestCase):
             ["known_species", "bird_unfamiliar", "nonbird", "unresolved"],
         )
 
+
+    def test_09_pre_expert_planner_enforces_cumulative_budget(self) -> None:
+        """Test that invocation planning uses only student features and enforces a rolling cap."""
+        n = 10
+        rng = np.random.RandomState(123)
+        student_probs = np.full((n, 4), 0.25, dtype=np.float64)
+        bird = np.full(n, 0.95)
+        entropy = np.full(n, 0.95)
+        margin = np.full(n, 0.05)
+        proto = rng.uniform(0.1, 0.3, size=n)
+        snr = np.full(n, 8.0)
+        clipping = np.zeros(n)
+        rms = np.full(n, 0.1)
+
+        Z = build_pre_expert_feature_matrix(
+            np.max(student_probs, axis=1), margin, entropy, proto,
+            bird, snr, clipping, rms,
+        )
+        estimator = BenefitEstimator()
+        estimator.fit_oof(Z, np.ones(n, dtype=np.float32))
+
+        controller = BudgetController(BudgetPolicyConfig(
+            max_expert_call_rate=0.20,
+            max_average_energy_units=10.0,
+            student_cost_units=1.0,
+            expert_cost_units=1.0,
+            router_overhead_units=0.0,
+        ))
+        controller.calibrated_threshold = 0.5
+        router = CostAwareRouter(estimator, controller, bird_activity_threshold=0.5)
+        # A caller must not pass expert outputs before asking the planner for a mask.
+        with self.assertRaises(ValueError):
+            router.decide_batch(
+                student_probs=student_probs,
+                student_bird_prob=bird,
+                student_novelty=np.full(n, 0.1),
+                student_entropy=entropy,
+                student_margin=margin,
+                student_proto_dist=proto,
+                snr_db=snr,
+                clipping_ratio=clipping,
+                rms_energy=rms,
+                expert_probs=np.tile(np.array([[0.25, 0.25, 0.25, 0.25]]), (n, 1)),
+            )
+
+        first_mask = router.plan_expert_invocations(
+            student_probs, bird, entropy, margin, proto, snr, clipping, rms
+        )
+        self.assertLessEqual(int(np.sum(first_mask)), 2)
+        planned_expert_probs = np.tile(
+            np.array([[0.05, 0.85, 0.05, 0.05]], dtype=np.float64),
+            (int(np.sum(first_mask)), 1),
+        )
+        decisions = router.decide_batch(
+            student_probs=student_probs,
+            student_bird_prob=bird,
+            student_novelty=np.full(n, 0.1),
+            student_entropy=entropy,
+            student_margin=margin,
+            student_proto_dist=proto,
+            snr_db=snr,
+            clipping_ratio=clipping,
+            rms_energy=rms,
+            expert_probs=planned_expert_probs,
+            expert_bird_prob=np.full(int(np.sum(first_mask)), 0.98),
+            expert_novelty=np.full(int(np.sum(first_mask)), 0.1),
+            invoke_mask=first_mask,
+        )
+        self.assertEqual(sum(int(item.expert_invoked) for item in decisions), int(np.sum(first_mask)))
+        self.assertEqual(controller.expert_calls, int(np.sum(first_mask)))
+
+        second_mask = router.plan_expert_invocations(
+            student_probs, bird, entropy, margin, proto, snr, clipping, rms
+        )
+        # At 20% cumulative budget over 20 clips, only two further calls are available.
+        self.assertLessEqual(int(np.sum(second_mask)), 2)
+
+    def test_08_tie_aware_open_set_and_risk_coverage_metrics(self) -> None:
+        """Test tied-score ROC/AP behavior and actual retained-set coverage."""
+        tied = compute_binary_auroc_aupr_fpr95(
+            np.array([1, 0, 1, 0]),
+            np.array([0.5, 0.5, 0.5, 0.5]),
+        )
+        self.assertAlmostEqual(tied["auroc"], 0.5, places=4)
+        self.assertAlmostEqual(tied["aupr"], 0.5, places=4)
+
+        perfect = compute_binary_auroc_aupr_fpr95(
+            np.array([0, 1, 0, 1]),
+            np.array([0.1, 0.9, 0.2, 0.8]),
+        )
+        self.assertAlmostEqual(perfect["auroc"], 1.0, places=4)
+        self.assertAlmostEqual(perfect["aupr"], 1.0, places=4)
+
+        curve = compute_risk_coverage_curve(
+            np.array([0.9, 0.1, 0.8]),
+            np.array([0.0, 1.0, 0.5]),
+            coverages=[0.5, 1.0],
+        )
+        self.assertAlmostEqual(curve["curve"][0]["coverage"], 2.0 / 3.0, places=5)
+        self.assertAlmostEqual(curve["curve"][0]["selective_risk"], 0.25, places=4)
+        with self.assertRaises(ValueError):
+            compute_risk_coverage_curve(np.array([0.1]), np.array([0.1, 0.2]))
 
 if __name__ == "__main__":
     unittest.main()

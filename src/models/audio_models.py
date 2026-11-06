@@ -1,13 +1,12 @@
 """
 Audio classification models for EcoGate-Audio:
 1. MFCCBaselineModel: Classical regularized multinomial logistic classifier over MFCC + delta statistics.
-2. LightweightStudentCNN: Compact 2D Convolutional + Residual Spectrogram network with dual heads
-   (known-species logits + bird-activity score) and 64-D acoustic embedding output.
-3. StrongExpertAudioModel: Higher-capacity Multi-Resolution Spectrogram + Temporal Self-Attention
-   Expert model with 128-D embedding output and stronger harmonic/temporal resolution.
+2. LightweightStudentCNN: Handcrafted spectral-statistic features, frozen random projections,
+   and optimized linear classification/bird-activity heads (64-D embedding).
+3. StrongExpertAudioModel: Handcrafted multi-statistic spectral features, fixed random attention
+   projections, a partially ridge-initialized embedding projection, and optimized output heads.
 
-Supports native NumPy/SciPy execution for guaranteed reproducibility across CPU/edge environments
-and includes optional PyTorch/ONNX wrappers when torch is installed.
+The current implementations use NumPy/SciPy only. No end-to-end neural backbone is trained.
 """
 from __future__ import annotations
 
@@ -145,10 +144,11 @@ class MFCCBaselineModel:
 
 class LightweightStudentCNN:
     """
-    Compact Residual Convolutional Spectrogram Student Model.
-    Extracts fast convolutional filterbank maps over Log-Mel spectrograms with batch statistics,
-    SiLU activation, residual projection, global pooling, 64-D embedding, classification head,
-    and bird-activity detection head.
+    Compatibility class name retained for existing checkpoints and API code.
+
+    This implementation is NOT a CNN: it extracts pooled band statistics and temporal
+    differences, applies frozen random projection/residual matrices, and optimizes only
+    the species and bird-activity output heads using L-BFGS.
     """
 
     def __init__(
@@ -162,12 +162,10 @@ class LightweightStudentCNN:
         self.embedding_dim = embedding_dim
         self.num_classes = num_classes
         self.seed = seed
-        self.model_id = "ecogate_student_cnn_v1"
+        self.model_id = "ecogate_student_fixed_features_linear_heads_v2"
 
         rng = np.random.RandomState(seed)
-        # Fixed Gabor/convolutional spectrogram kernels + learned residual projection + linear heads
-        self.conv_freq_kernels = rng.normal(0.0, 0.18, size=(16, 5)).astype(np.float32)
-        self.conv_time_kernels = rng.normal(0.0, 0.18, size=(16, 5)).astype(np.float32)
+        # Frozen random projection/residual matrices; only the output heads are fitted.
         raw_dim = n_mels * 2 + 16
         self.W_proj = (rng.normal(0.0, 1.0 / np.sqrt(raw_dim), size=(raw_dim, embedding_dim))).astype(np.float32)
         self.b_proj = np.zeros(embedding_dim, dtype=np.float32)
@@ -182,8 +180,8 @@ class LightweightStudentCNN:
 
     def _extract_raw_conv_features(self, mels: np.ndarray) -> np.ndarray:
         """
-        Compute fast 2D depthwise-separable spectral-temporal features over batch of Log-Mel
-        spectrograms of shape (N, M, T).
+        Compute pooled per-band means/stds and temporal-difference summaries for
+        Log-Mel batches of shape (N, M, T). No learned convolution is performed.
         """
         # Coarse 16-subband pooling repeated to M (lightweight low-resolution student filterbank)
         coarse_splits = np.array_split(mels, 4, axis=1)
@@ -316,17 +314,19 @@ class LightweightStudentCNN:
 
     def param_count(self) -> int:
         return int(
-            self.conv_freq_kernels.size
-            + self.conv_time_kernels.size
-            + self.W_proj.size
-            + self.b_proj.size
-            + self.W_res.size
-            + self.b_res.size
-            + self.W_cls.size
-            + self.b_cls.size
-            + self.W_bird.size
-            + 1
+            self.W_proj.size + self.b_proj.size
+            + self.W_res.size + self.b_res.size
+            + self.W_cls.size + self.b_cls.size
+            + self.W_bird.size + 1
         )
+
+    def storage_bytes(self) -> int:
+        """Return actual bytes occupied by model arrays and scalar bird bias."""
+        arrays = (
+            self.W_proj, self.b_proj, self.W_res, self.b_res,
+            self.W_cls, self.b_cls, self.W_bird, self.bn_mean, self.bn_std,
+        )
+        return int(sum(array.nbytes for array in arrays) + np.dtype(np.float64).itemsize)
 
     def save_checkpoint(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -360,10 +360,11 @@ class LightweightStudentCNN:
 
 class StrongExpertAudioModel:
     """
-    High-Resolution Multi-Scale Spectrogram + Temporal Self-Attention Expert Model.
-    Captures fine-grained harmonic structure, spectral flux, modulation spectrum,
-    multi-head temporal attention pooling, and second-order spectral covariance
-    that the lightweight student model omits.
+    Compatibility class name retained for the existing training pipeline.
+
+    This implementation is NOT a trained AST/transformer: it computes handcrafted
+    spectral summaries, applies fixed random attention projections, ridge-initializes
+    part of the embedding projection, and optimizes only the species and bird heads.
     """
 
     def __init__(
@@ -377,7 +378,7 @@ class StrongExpertAudioModel:
         self.embedding_dim = embedding_dim
         self.num_classes = num_classes
         self.seed = seed
-        self.model_id = "ecogate_expert_multiscale_ast_v1"
+        self.model_id = "ecogate_expert_fixed_spectral_attention_features_v2"
 
         rng = np.random.RandomState(seed)
         raw_dim = n_mels * 6 + 64
@@ -534,18 +535,20 @@ class StrongExpertAudioModel:
 
     def param_count(self) -> int:
         return int(
-            self.W_attn_q.size
-            + self.W_attn_k.size
-            + self.W_attn_v.size
-            + self.W_proj1.size
-            + self.b_proj1.size
-            + self.W_proj2.size
-            + self.b_proj2.size
-            + self.W_cls.size
-            + self.b_cls.size
-            + self.W_bird.size
-            + 1
+            self.W_attn_q.size + self.W_attn_k.size + self.W_attn_v.size
+            + self.W_proj1.size + self.b_proj1.size
+            + self.W_proj2.size + self.b_proj2.size
+            + self.W_cls.size + self.b_cls.size + self.W_bird.size + 1
         )
+
+    def storage_bytes(self) -> int:
+        """Return actual bytes occupied by expert arrays and scalar bird bias."""
+        arrays = (
+            self.W_attn_q, self.W_attn_k, self.W_attn_v,
+            self.W_proj1, self.b_proj1, self.W_proj2, self.b_proj2,
+            self.W_cls, self.b_cls, self.W_bird, self.bn_mean, self.bn_std,
+        )
+        return int(sum(array.nbytes for array in arrays) + np.dtype(np.float64).itemsize)
 
     def save_checkpoint(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

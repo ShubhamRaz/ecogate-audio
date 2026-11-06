@@ -65,6 +65,81 @@ class CostAwareRouter:
         self.min_snr_db = min_snr_db
         self.max_clipping_ratio = max_clipping_ratio
 
+    def plan_expert_invocations(
+        self,
+        student_probs: np.ndarray,
+        student_bird_prob: np.ndarray,
+        student_entropy: np.ndarray,
+        student_margin: np.ndarray,
+        student_proto_dist: np.ndarray,
+        snr_db: np.ndarray,
+        clipping_ratio: np.ndarray,
+        rms_energy: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Plan calls from student/audio features only. Call this BEFORE computing any
+        expert outputs. The rolling cap limits cumulative calls across batches.
+        """
+        probs = np.asarray(student_probs, dtype=np.float64)
+        if probs.ndim != 2 or probs.shape[1] < 2:
+            raise ValueError("student_probs must have shape (N, C), with C >= 2.")
+        n = probs.shape[0]
+        arrays = [
+            np.asarray(v, dtype=np.float64).reshape(-1)
+            for v in (
+                student_bird_prob, student_entropy, student_margin,
+                student_proto_dist, snr_db, clipping_ratio, rms_energy,
+            )
+        ]
+        if any(v.size != n for v in arrays):
+            raise ValueError("All routing feature arrays must have one value per sample.")
+        if not all(np.all(np.isfinite(v)) for v in [probs, *arrays]):
+            raise ValueError("Routing inputs must contain only finite values.")
+        bird_prob, entropy, margin, proto_dist, snr, clip, rms = arrays
+        if np.any(probs < 0) or np.any(probs > 1) or not np.allclose(np.sum(probs, axis=1), 1.0, atol=1e-3):
+            raise ValueError("student_probs must contain normalized probabilities.")
+        if n == 0:
+            return np.zeros(0, dtype=bool)
+
+        Z = build_pre_expert_feature_matrix(
+            student_max_prob=np.max(probs, axis=1),
+            student_margin=margin,
+            student_entropy=entropy,
+            prototype_distance=proto_dist,
+            bird_activity_prob=bird_prob,
+            audio_snr_db=snr,
+            clipping_ratio=clip,
+            rms_energy=rms,
+        )
+        benefits = np.asarray(self.benefit_estimator.predict_benefit(Z), dtype=np.float64).reshape(-1)
+        eligible = (
+            (benefits > self.budget_controller.calibrated_threshold)
+            & (bird_prob >= self.bird_activity_threshold)
+            & (clip <= self.max_clipping_ratio)
+            & (snr >= self.min_snr_db)
+            & (rms >= 0.0002)
+        )
+
+        cfg = self.budget_controller.cfg
+        energy_rate = (
+            cfg.max_average_energy_units - cfg.student_cost_units - cfg.router_overhead_units
+        ) / max(cfg.expert_cost_units, 1e-12)
+        cap_rate = min(
+            max(0.0, cfg.max_expert_call_rate),
+            max(0.0, energy_rate),
+            max(0.0, float(self.budget_controller.calibrated_max_call_rate)),
+        )
+        cumulative_budget = int(np.floor(cap_rate * (self.budget_controller.total_queries + n) + 1e-12))
+        slots = max(0, cumulative_budget - self.budget_controller.expert_calls)
+        candidates = np.flatnonzero(eligible)
+        if candidates.size > slots:
+            # Stable descending-benefit selection; ties are deterministic by input order.
+            selected = candidates[np.argsort(-benefits[candidates], kind="mergesort")[:slots]]
+            mask = np.zeros(n, dtype=bool)
+            mask[selected] = True
+            return mask
+        return eligible.astype(bool)
+
     def decide_batch(
         self,
         student_probs: np.ndarray,
@@ -104,7 +179,70 @@ class CostAwareRouter:
         est_benefits = self.benefit_estimator.predict_benefit(Z)
 
         if invoke_mask is None:
-            invoke_mask = est_benefits > self.budget_controller.calibrated_threshold
+            if expert_probs is not None:
+                raise ValueError(
+                    "Plan calls before expert inference: call plan_expert_invocations(), "
+                    "run the expert only on selected samples, then pass invoke_mask explicitly."
+                )
+            invoke_mask = self.plan_expert_invocations(
+                student_probs=student_probs,
+                student_bird_prob=student_bird_prob,
+                student_entropy=student_entropy,
+                student_margin=student_margin,
+                student_proto_dist=student_proto_dist,
+                snr_db=snr_db,
+                clipping_ratio=clipping_ratio,
+                rms_energy=rms_energy,
+            )
+        else:
+            invoke_mask = np.asarray(invoke_mask, dtype=bool).reshape(-1)
+            if invoke_mask.size != n:
+                raise ValueError("invoke_mask must have one value per sample.")
+
+        # Apply quality and student bird-activity gates even when a caller supplies
+        # a custom mask; invalid/no-bird clips should not consume expert calls.
+        quality_ok = (
+            (np.asarray(clipping_ratio) <= self.max_clipping_ratio)
+            & (np.asarray(snr_db) >= self.min_snr_db)
+            & (np.asarray(rms_energy) >= 0.0002)
+        )
+        bird_ok = np.asarray(student_bird_prob) >= self.bird_activity_threshold
+        invoke_mask = np.asarray(invoke_mask, dtype=bool) & quality_ok & bird_ok
+
+        # Expert results may be supplied either for the full batch or only for
+        # indices selected by the pre-expert planner. Scatter sparse results into
+        # student defaults so the expensive model need only run on selected clips.
+        call_indices = np.flatnonzero(invoke_mask)
+        expert_probs_full = None
+        expert_bird_full = None
+        expert_novelty_full = None
+        if expert_probs is not None:
+            exp_p = np.asarray(expert_probs, dtype=np.float64)
+            if exp_p.ndim != 2 or exp_p.shape[1] != student_probs.shape[1]:
+                raise ValueError("expert_probs must have shape (N, C) or (number_of_calls, C).")
+            if exp_p.shape[0] == n:
+                expert_probs_full = exp_p
+            elif exp_p.shape[0] == call_indices.size:
+                expert_probs_full = np.asarray(student_probs, dtype=np.float64).copy()
+                expert_probs_full[call_indices] = exp_p
+            else:
+                raise ValueError("expert_probs row count must equal batch size or number of planned calls.")
+
+        def _expand_expert_vector(values: Optional[np.ndarray], default: np.ndarray, name: str) -> np.ndarray:
+            if values is None:
+                return np.asarray(default, dtype=np.float64).copy()
+            arr = np.asarray(values, dtype=np.float64).reshape(-1)
+            if arr.size == n:
+                return arr
+            if arr.size == call_indices.size:
+                full = np.asarray(default, dtype=np.float64).copy()
+                full[call_indices] = arr
+                return full
+            raise ValueError(f"{name} must contain one value per sample or per planned expert call.")
+
+        if expert_probs_full is not None:
+            expert_bird_full = _expand_expert_vector(expert_bird_prob, student_bird_prob, "expert_bird_prob")
+            expert_novelty_full = _expand_expert_vector(expert_novelty, student_novelty, "expert_novelty")
 
         decisions: List[SelectiveDecision] = []
         cfg = self.budget_controller.cfg
@@ -131,9 +269,9 @@ class CostAwareRouter:
                 continue
 
             use_exp = bool(invoke_mask[i]) and (expert_probs is not None)
-            probs_i = expert_probs[i] if use_exp else student_probs[i]
-            bird_p_i = float(expert_bird_prob[i]) if (use_exp and expert_bird_prob is not None) else float(student_bird_prob[i])
-            nov_i = float(expert_novelty[i]) if (use_exp and expert_novelty is not None) else float(student_novelty[i])
+            probs_i = expert_probs_full[i] if use_exp else student_probs[i]
+            bird_p_i = float(expert_bird_full[i]) if use_exp else float(student_bird_prob[i])
+            nov_i = float(expert_novelty_full[i]) if use_exp else float(student_novelty[i])
             cost_i = (
                 cfg.student_cost_units + cfg.router_overhead_units + cfg.expert_cost_units
                 if use_exp
@@ -201,4 +339,8 @@ class CostAwareRouter:
                     latency_ms=round(lat_i, 3),
                 )
             )
+        # Only count expert calls for which expert outputs were supplied and used.
+        self.budget_controller.record_batch(
+            np.asarray([decision.expert_invoked for decision in decisions], dtype=bool)
+        )
         return decisions

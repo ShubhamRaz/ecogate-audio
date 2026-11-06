@@ -1,3 +1,5 @@
+> **STATUS: HISTORICAL OUTPUT — RECOMPUTE BEFORE CITATION.** These numbers predate the tie-aware ROC/AP implementation now on the fix branch. They are preserved for traceability only; use fresh output from the corrected pipeline, and evaluate truly held-out taxa separately from generic background noise.
+
 # Open-Set Recognition & Held-Out Species Evaluation (`results/open_set_evaluation.md`)
 
 ## 1. Score Direction & Evaluation Protocol

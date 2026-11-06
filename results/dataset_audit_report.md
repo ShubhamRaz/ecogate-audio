@@ -1,3 +1,5 @@
+> **STATUS: NOT PUBLICATION-READY — PROVENANCE UNRESOLVED.** The historical report lists 8,663 WAVs while an earlier archive claim lists 8,512. The difference is exactly 151, which equals the current default synthetic-fixture generator output (144 base clips + 6 duplicate copies + 1 corrupt WAV). This arithmetic is a serious provenance warning, not proof that synthetic clips were mixed into the archive: the raw WAV files are not versioned here, so that cannot be confirmed retrospectively. Re-mount the authoritative archive into an empty data/raw directory, rerun the audit, inspect the new source marker and manifest, and replace every metric before use in a paper.
+
 # Dataset Audit & Split Integrity Report (`results/dataset_audit_report.md`)
 
 ## 1. Archive Provenance & Modality Policy

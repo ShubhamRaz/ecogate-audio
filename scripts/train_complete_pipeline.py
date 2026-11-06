@@ -8,12 +8,16 @@ and writes all 6 required Markdown summary reports in `results/`.
 """
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import os
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+import yaml
 
 os.environ.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
 import matplotlib
@@ -95,7 +99,7 @@ def generate_plots(
     ax1.set_xticks(x)
     ax1.set_xticklabels(short_names, rotation=30, ha="right", fontsize=8.5)
     ax1.set_ylabel("Score / Loss")
-    ax1.set_title("EcoGate-Audio: Routing Policy Comparison at Matched Target Budget")
+    ax1.set_title("EcoGate-Audio: Routing Policies Under a Maximum Call-Rate Cap")
     ax1.legend(loc="upper right")
     ax1.grid(axis="y", alpha=0.25)
     fig.tight_layout()
@@ -109,7 +113,7 @@ def generate_plots(
     cov_r = [pt["coverage"] for pt in rc_curve_routed["curve"]]
     risk_r = [pt["selective_risk"] for pt in rc_curve_routed["curve"]]
     ax.plot(cov_s, risk_s, "o--", label=f"Student Only (AURC={rc_curve_student['aurc']:.3f})", color="#64748b")
-    ax.plot(cov_r, risk_r, "s-", label=f"Cost-Aware Selective Routing (AURC={rc_curve_routed['aurc']:.3f})", color="#059669", linewidth=2)
+    ax.plot(cov_r, risk_r, "s-", label=f"Budgeted Benefit Routing (AURC={rc_curve_routed['aurc']:.3f})", color="#059669", linewidth=2)
     ax.set_xlabel("Coverage")
     ax.set_ylabel("Selective Risk (Decision Loss)")
     ax.set_title("Risk-Coverage Trade-Off Curve")
@@ -188,8 +192,8 @@ def write_summary_markdown_reports(
 
     # 2. results/baseline_comparison.md
     m_mfcc = baseline_metrics["mfcc_logreg"]
-    m_stud = baseline_metrics["student_cnn_fp32"]
-    m_quant = baseline_metrics["student_cnn_int8"]
+    m_stud = baseline_metrics["student_fixed_feature_fp32"]
+    m_quant = baseline_metrics["student_compressed_weights_fp32_runtime"]
     m_exp = baseline_metrics["expert_multiscale"]
     (results_dir / "baseline_comparison.md").write_text(
         f"""# Audio-Only Baseline & Model Tier Comparison (`results/baseline_comparison.md`)
@@ -199,14 +203,13 @@ def write_summary_markdown_reports(
 | Model Tier | Model ID | Accuracy | Macro-F1 | Weighted-F1 | Balanced Accuracy | Parameters |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | Classical Baseline | `{m_mfcc['model_id']}` | {m_mfcc['accuracy']:.4f} | {m_mfcc['macro_f1']:.4f} | {m_mfcc['weighted_f1']:.4f} | {m_mfcc['balanced_accuracy']:.4f} | {m_mfcc['parameters']} |
-| Lightweight Student (FP32) | `{m_stud['model_id']}` | {m_stud['accuracy']:.4f} | {m_stud['macro_f1']:.4f} | {m_stud['weighted_f1']:.4f} | {m_stud['balanced_accuracy']:.4f} | {m_stud['parameters']} |
-| Quantized Student (INT8 Recalibrated) | `{m_quant['model_id']}` | {m_quant['accuracy']:.4f} | {m_quant['macro_f1']:.4f} | {m_quant['weighted_f1']:.4f} | {m_quant['balanced_accuracy']:.4f} | {m_quant['parameters']} |
-| Strong Expert Model | `{m_exp['model_id']}` | {m_exp['accuracy']:.4f} | {m_exp['macro_f1']:.4f} | {m_exp['weighted_f1']:.4f} | {m_exp['balanced_accuracy']:.4f} | {m_exp['parameters']} |
+| Fixed-feature student (FP32 runtime) | `{m_stud['model_id']}` | {m_stud['accuracy']:.4f} | {m_stud['macro_f1']:.4f} | {m_stud['weighted_f1']:.4f} | {m_stud['balanced_accuracy']:.4f} | {m_stud['parameters']} |
+| Compressed-weight student (INT8 storage / FP32 runtime) | `{m_quant['model_id']}` | {m_quant['accuracy']:.4f} | {m_quant['macro_f1']:.4f} | {m_quant['weighted_f1']:.4f} | {m_quant['balanced_accuracy']:.4f} | {m_quant['parameters']} |
+| Fixed-feature expert model (not AST) | `{m_exp['model_id']}` | {m_exp['accuracy']:.4f} | {m_exp['macro_f1']:.4f} | {m_exp['weighted_f1']:.4f} | {m_exp['balanced_accuracy']:.4f} | {m_exp['parameters']} |
 
-## 2. Expert Uplift Verification Gate
-- **Expert vs. Student Macro-F1 Uplift**: `{m_exp['macro_f1'] - m_stud['macro_f1']:+.4f}`
-- **Minimum Required Uplift (config)**: `+0.0200`
-- **Gate Status**: {"✅ PASS — Expert demonstrates sufficient positive uplift over student; selective invocation is justified." if (m_exp['macro_f1'] - m_stud['macro_f1']) >= 0.02 else ("⚠️ MARGINAL — Expert shows positive but sub-threshold uplift; check training data size." if (m_exp['macro_f1'] - m_stud['macro_f1']) > 0.0 else "❌ FAIL — Expert does NOT outperform student on this dataset; do NOT rely on expert gate for uplift claim.")}
+## 2. Descriptive Model Difference
+- **Expert vs. Student Macro-F1 Difference**: `{m_exp['macro_f1'] - m_stud['macro_f1']:+.4f}`
+- This is a descriptive result from one held-out partition, not a pre-registered acceptance gate or proof of generalization. Report per-group uncertainty and replicate on a source-independent archive before making superiority claims.
 """,
         encoding="utf-8",
     )
@@ -248,7 +251,7 @@ def write_summary_markdown_reports(
         for k, v in routing_comparison.items()
     )
     bs_rows = "\n".join(
-        f"| {b['target_budget_rate']:.2f} | {b['confidence_loss']:.4f} | {b['entropy_loss']:.4f} | {b['proposed_cost_aware_loss']:.4f} | {b['proposed_macro_f1']:.4f} |"
+        f"| {b['target_budget_rate']:.2f} | {b['proposed_call_rate']:.4f} | {b['confidence_loss']:.4f} | {b['entropy_loss']:.4f} | {b['proposed_cost_aware_loss']:.4f} | {b['proposed_macro_f1']:.4f} |"
         for b in budget_sweep
     )
     ab_rows = "\n".join(
@@ -258,18 +261,18 @@ def write_summary_markdown_reports(
     (results_dir / "routing_comparison.md").write_text(
         f"""# Cost-Aware Expert Routing Comparison & Ablation Report (`results/routing_comparison.md`)
 
-## 1. Ten-Policy Routing Comparison on Held-Out Test Split (Matched Target Budget = 25%)
+## 1. Ten-Policy Routing Comparison on Held-Out Test Split (Maximum Call-Rate Cap = 25%)
 
 | Routing Policy | Expert Call Rate | Expected Decision Loss | Group Bootstrap 95% CI | Loss Reduction vs. Student | Improvement per Expert Call | Known-Species Macro-F1 | Avg. Compute Cost Units | Deployable |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 {rt_rows}
 
-*Note*: `offline_oracle_upper_bound` uses ground-truth test loss reductions and is included strictly as a theoretical lower-loss bound, never as a deployable router.
+*Notes*: `offline_oracle_upper_bound` uses ground-truth test loss reductions and is never deployable. Target call rate is a cap; realized rates can be lower. Expert cost is constant per call, so the cost multiplier changes the invocation threshold, not sample ranking. The proposed policy also applies a pre-expert bird-activity gate; do not interpret any difference as evidence of heterogeneous per-sample cost optimization.
 
-## 2. Matched Expert-Call Budget Sweep
+## 2. Maximum Call-Rate Cap Sweep
 
-| Target Expert Call Rate | Fixed-Confidence Loss | Entropy Routing Loss | Proposed Cost-Aware Loss | Proposed Known-Species Macro-F1 |
-| :---: | :---: | :---: | :---: | :---: |
+| Maximum Expert Call-Rate Cap | Proposed Actual Call Rate | Fixed-Confidence Loss | Entropy Routing Loss | Budgeted Benefit Loss | Known-Species Macro-F1 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
 {bs_rows}
 
 ## 3. Routing Feature & Component Ablation Study
@@ -291,18 +294,19 @@ def write_summary_markdown_reports(
 
 ## 1. Model Complexity & Measured CPU Latency (`{s_b['platform']}`)
 
-| Model Variant | Parameters | Est. MACs / Clip | Est. FLOPs / Clip | Storage (FP32 / INT8) | Batch-1 CPU Latency (Mean / P95) | Peak Memory | Electrical Energy Status |
+| Model Variant | Parameters | MACs / FLOPs | Actual Stored Arrays | Runtime Compute Dtype | Batch-1 CPU Latency (Mean / P95) | Peak Memory | Electrical Energy Status |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| Student CNN (FP32) | {s_b['parameters']} | {s_b['estimated_macs_per_clip']} | {s_b['estimated_flops_per_clip']} | {s_b['model_storage_kb_fp32']} KB | {s_b['batch_size_1_cpu_latency_mean_ms']} ms / {s_b['batch_size_1_cpu_latency_p95_ms']} ms | {s_b['peak_memory_kb']} KB | `{s_b['electrical_energy_status']}` |
-| Student CNN (INT8) | {q_b['parameters']} | {q_b['estimated_macs_per_clip']} | {q_b['estimated_flops_per_clip']} | {q_b['model_storage_kb_int8']} KB | {q_b['batch_size_1_cpu_latency_mean_ms']} ms / {q_b['batch_size_1_cpu_latency_p95_ms']} ms | {q_b['peak_memory_kb']} KB | `{q_b['electrical_energy_status']}` |
-| Strong Expert (FP32) | {e_b['parameters']} | {e_b['estimated_macs_per_clip']} | {e_b['estimated_flops_per_clip']} | {e_b['model_storage_kb_fp32']} KB | {e_b['batch_size_1_cpu_latency_mean_ms']} ms / {e_b['batch_size_1_cpu_latency_p95_ms']} ms | {e_b['peak_memory_kb']} KB | `{e_b['electrical_energy_status']}` |
+| Student fixed-feature model | {s_b['parameters']} | n/a | {s_b['actual_stored_array_kb']} KB | {s_b['runtime_compute_dtype']} | {s_b['batch_size_1_cpu_latency_mean_ms']} ms / {s_b['batch_size_1_cpu_latency_p95_ms']} ms | {s_b['peak_memory_kb']} KB | `{s_b['electrical_energy_status']}` |
+| Student compressed-weight artifact | {q_b['parameters']} | n/a | {q_b['actual_stored_array_kb']} KB | {q_b['runtime_compute_dtype']} | {q_b['batch_size_1_cpu_latency_mean_ms']} ms / {q_b['batch_size_1_cpu_latency_p95_ms']} ms | {q_b['peak_memory_kb']} KB | `{q_b['electrical_energy_status']}` |
+| Expert fixed-feature model | {e_b['parameters']} | n/a | {e_b['actual_stored_array_kb']} KB | {e_b['runtime_compute_dtype']} | {e_b['batch_size_1_cpu_latency_mean_ms']} ms / {e_b['batch_size_1_cpu_latency_p95_ms']} ms | {e_b['peak_memory_kb']} KB | `{e_b['electrical_energy_status']}` |
 
 ## 2. Energy / Compute Cost per Correct Prediction (Proposed Cost-Aware Policy)
 - **Numerator (Total Compute Cost Units)**: `{epc['numerator_total_compute_cost_units']}`
 - **Numerator (Measured Electrical Joules)**: `{epc['numerator_measured_electrical_joules']}` (`{epc['electrical_measurement_status']}`)
 - **Denominator (Number of Correct Predictions)**: `{epc['denominator_correct_predictions']}` out of `{epc['total_evaluated_predictions']}` evaluated test clips
 - **Compute Cost Units per Correct Prediction**: `{epc['compute_cost_units_per_correct_prediction']}`
-- **Raspberry Pi Zero 2 W Assessment**: Constrained 512 MB RAM / Cortex-A53 target is suitable for the INT8 Student + Quality Gate (`{q_b['model_storage_kb_int8']} KB` weights), whereas continuous on-device invocation of the full transformer/attention expert is not guaranteed real-time without offloading or selective gating.
+- **Integer inference status**: `{q_b.get('runtime_compute_dtype', 'float32')}` runtime compute; the NPZ artifact uses compressed weights but dequantizes them before matrix multiplications. No Pi Zero 2 W benchmark or physical energy measurement is claimed.
+- **Complexity accounting**: MAC/FLOP counts are unavailable until exact operator-level accounting is added; parameter count is not used as a MAC proxy.
 """,
         encoding="utf-8",
     )
@@ -313,20 +317,51 @@ def write_summary_markdown_reports(
 
 ## 1. Summary of Executed Verification Experiments (Experiments 1–11)
 1. **Experiment 1 (Dataset Audit & Split Contamination)**: Verified SHA-256 and decoded float32 waveform duplicate grouping, ESC-50 filename matching, corrupt WAV exclusion, missing-path detection, and zero cross-split group leakage (`passed = {split_integrity['passed']}`).
-2. **Experiment 2 (Audio-Only Baselines)**: Evaluated `MFCCBaselineModel` (Macro-F1 = `{m_mfcc['macro_f1']:.4f}`) vs. `LightweightStudentCNN` (Macro-F1 = `{m_stud['macro_f1']:.4f}`).
-3. **Experiment 3 (Student vs. Expert Performance)**: Verified `StrongExpertAudioModel` uplift (Macro-F1 = `{m_exp['macro_f1']:.4f}`, uplift = `+{m_exp['macro_f1'] - m_stud['macro_f1']:.4f}`).
+2. **Experiment 2 (Audio-Only Baselines)**: Evaluated the MFCC baseline against the fixed-feature student compatibility model (not a CNN).
+3. **Experiment 3 (Feature Model Comparison)**: Compared the fixed-feature student and expert compatibility implementations; neither is a trained deep neural backbone.
 4. **Experiment 4 (Open-Set Recognition)**: Evaluated all 6 open-set scoring methods (`msp`, `temperature_scaled`, `entropy`, `margin`, `prototype_distance`, `energy`) and 4 leave-one-species-out rotations.
-5. **Experiment 5 & 6 (Routing Baselines vs. Proposed Cost-Aware Routing)**: Compared all 10 routing policies using out-of-fold trained `BenefitEstimator` and calibration-split threshold selection. Proposed cost-aware routing achieved Expected Decision Loss = `{routing_comparison['proposed_cost_aware_routing']['expected_decision_loss']:.4f}` at expert call rate = `{routing_comparison['proposed_cost_aware_routing']['expert_call_rate']:.4f}`.
+5. **Experiment 5 & 6 (Routing Baselines vs. Budgeted Benefit Routing)**: Compared routing policies using out-of-fold benefit estimates and calibration-only thresholds, subject to configured call-rate and energy caps. The reported result is an empirical output, not evidence of per-sample variable-cost optimization.
 6. **Experiment 7 (Source-Shift & Group Bootstrap Robustness)**: Computed group-level bootstrap 95% confidence intervals preserving session/duplicate clusters.
-7. **Experiment 8 (Quantization & Edge Deployment)**: Exported INT8 student artifact (`{q_b['model_storage_kb_int8']} KB`) and recalibrated post-quantization temperature.
+7. **Experiment 8 (Compressed Weight Storage)**: Exported an NPZ with INT8 weight arrays and recalibrated probabilities; inference dequantizes to float32, so this is not integer compute.
 8. **Experiment 9 & 10 (Risk-Coverage-Energy Trade-off & Ablations)**: Generated risk-coverage curves, matched budget sweeps (10%–50% call rates), and feature-group ablations.
-9. **Experiment 11 (External Unknown-Species & Provenance Scope)**: Documented full-archive Mendeley (`10.17632/p6m5tmr477.1`) and ESC-50 (`10.1145/2733373.2806390`) evaluation boundaries; all numbers in these reports come strictly from executed runs on the local reference validation dataset, with zero fabricated full-archive claims.
+9. **Experiment 11 (Dataset Scope)**: Records the dataset source type in the audit output. Synthetic fixtures are blocked from the complete research pipeline; unverified source metadata must not be described as source-independent generalization.
 """,
         encoding="utf-8",
     )
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run EcoGate-Audio research experiments on a mounted real dataset.")
+    parser.add_argument("--force-rebuild-cache", action="store_true", help="Rebuild cached features from the current split manifest.")
+    args = parser.parse_args()
+
+    routing_document = yaml.safe_load(
+        (PROJECT_ROOT / "configs" / "routing" / "routing.yaml").read_text(encoding="utf-8")
+    ) or {}
+    routing_cfg = routing_document.get("routing", {})
+    optimization_cfg = routing_cfg.get("optimization_constraints", {})
+    cost_cfg = routing_cfg
+    budget_config = BudgetPolicyConfig(
+        max_expert_call_rate=float(optimization_cfg.get("max_expert_call_rate", 0.30)),
+        max_average_energy_units=float(optimization_cfg.get("max_average_energy_units", 2.40)),
+        student_cost_units=float(cost_cfg.get("estimated_student_cost_units", 1.0)),
+        expert_cost_units=float(cost_cfg.get("estimated_expert_cost_units", 4.5)),
+        router_overhead_units=float(cost_cfg.get("router_overhead_cost_units", 0.05)),
+        min_bird_recall=float(optimization_cfg.get("min_bird_recall", 0.80)),
+        min_known_coverage=float(optimization_cfg.get("min_known_coverage", 0.70)),
+        max_false_known_on_unknown=float(optimization_cfg.get("max_false_known_on_unknown", 0.20)),
+    )
+    lambda_cost = float(cost_cfg.get("lambda_cost_tradeoff", 0.01))
+    bird_activity_threshold = float(routing_cfg.get("thresholds", {}).get("bird_activity_min", 0.35))
+
+    raw_dir = PROJECT_ROOT / "data" / "raw"
+    synthetic_marker = raw_dir / ".ecogate_synthetic_reference_fixture"
+    if synthetic_marker.exists():
+        raise SystemExit(
+            "Research training is blocked: data/raw is marked as a synthetic reference fixture. "
+            "Remove the fixture and mount the real source archive before running publication experiments."
+        )
+
     print("=== [EcoGate-Audio] Starting Complete End-to-End Pipeline ===")
     run_audit()
     run_duplicates()
@@ -337,25 +372,50 @@ def main() -> None:
     run_validate()
 
     features_cache = PROJECT_ROOT / "data" / "features" / "features_cache.pkl"
-    if features_cache.exists():
-        print(f"=== [EcoGate-Audio] Loading cached acoustic features from {features_cache} ===", flush=True)
+    cache_meta = features_cache.with_suffix(".meta.json")
+    split_csv = PROJECT_ROOT / "data" / "splits" / "group_splits_manifest.csv"
+    if not split_csv.exists():
+        raise SystemExit(f"Split manifest not found: {split_csv}. Run the real-data audit and split steps first.")
+    manifest_sha = hashlib.sha256(split_csv.read_bytes()).hexdigest()
+    cache_valid = False
+    if features_cache.exists() and cache_meta.exists() and not args.force_rebuild_cache:
+        try:
+            meta = json.loads(cache_meta.read_text(encoding="utf-8"))
+            cache_valid = (
+                meta.get("manifest_sha256") == manifest_sha
+                and meta.get("dataset_source_type") == "local_archive_source_unverified"
+            )
+        except (OSError, json.JSONDecodeError):
+            cache_valid = False
+
+    if cache_valid:
+        print(f"=== [EcoGate-Audio] Loading manifest-matched acoustic cache from {features_cache} ===", flush=True)
         import pickle
         with open(features_cache, "rb") as f:
             all_samples = pickle.load(f)
-        print(f"[load_dataset] Loaded {len(all_samples)} samples from cache.", flush=True)
     else:
+        if features_cache.exists():
+            print("[load_dataset] Ignoring stale/unverified feature cache; rebuilding from current manifest.", flush=True)
         print("=== [EcoGate-Audio] Loading Dataset and Manifest ===", flush=True)
-        split_csv = PROJECT_ROOT / "data" / "splits" / "group_splits_manifest.csv"
-        raw_dir = PROJECT_ROOT / "data" / "raw"
         all_samples = load_dataset_from_manifest(split_csv, raw_dir)
         try:
             features_cache.parent.mkdir(parents=True, exist_ok=True)
             import pickle
             with open(features_cache, "wb") as f:
                 pickle.dump(all_samples, f, protocol=pickle.HIGHEST_PROTOCOL)
-            print(f"[load_dataset] Cached {len(all_samples)} samples to {features_cache}.", flush=True)
+            cache_meta.write_text(json.dumps({
+                "manifest_sha256": manifest_sha,
+                "dataset_source_type": "local_archive_source_unverified",
+                "cache_format_version": 2,
+            }, indent=2), encoding="utf-8")
+            print(f"[load_dataset] Cached {len(all_samples)} manifest-matched samples.", flush=True)
         except Exception as exc:
-            print(f"[load_dataset] Warning: failed to write features cache: {exc}", flush=True)
+            print(f"[load_dataset] Warning: failed to write feature cache and metadata: {exc}", flush=True)
+
+    if any(getattr(sample, "source_type", "unknown") == "synthetic_reference_fixture" for sample in all_samples):
+        raise SystemExit("Synthetic fixture samples detected in cache; refusing research evaluation.")
+    if not all_samples:
+        raise SystemExit("No valid samples loaded from the audited manifest.")
 
     train_s = [s for s in all_samples if s.split == "train"]
     val_s = [s for s in all_samples if s.split == "val"]
@@ -369,12 +429,12 @@ def main() -> None:
     ca_arr = prepare_arrays(cal_s, normalizer)
     te_arr = prepare_arrays(test_s, normalizer)
 
-    # 1. Train MFCC Baseline, Student CNN, and Strong Expert
-    print("=== [Step 1/11] Training MFCC Baseline, Student CNN, and Expert Model ===", flush=True)
+    # 1. Fit MFCC Baseline, Fixed-Feature Student, and Fixed-Feature Expert
+    print("=== [Step 1/11] Training MFCC baseline and fixed-feature student/expert models ===", flush=True)
     mfcc_model = MFCCBaselineModel(seed=42)
     mfcc_model.fit(tr_arr["mfccs"], tr_arr["y_known"], tr_arr["is_bird"])
 
-    print("  Fitting Student CNN...", flush=True)
+    print("  Fitting fixed-feature student model...", flush=True)
     student = LightweightStudentCNN(seed=42)
     student.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], va_arr["mels"], va_arr["y_known"], epochs=15)
     student.save_checkpoint(PROJECT_ROOT / "checkpoints" / "student_best.npz")
@@ -432,12 +492,12 @@ def main() -> None:
             "parameters": mfcc_model.param_count(),
             **compute_classification_metrics(te_arr["y_known"][te_k_mask], te_mfcc_out.predicted_class[te_k_mask]),
         },
-        "student_cnn_fp32": {
+        "student_fixed_feature_fp32": {
             "model_id": student.model_id,
             "parameters": student.param_count(),
             **compute_classification_metrics(te_arr["y_known"][te_k_mask], te_s_out.predicted_class[te_k_mask]),
         },
-        "student_cnn_int8": {
+        "student_compressed_weights_fp32_runtime": {
             "model_id": quant_student.model_id,
             "parameters": student.param_count(),
             **compute_classification_metrics(te_arr["y_known"][te_k_mask], te_q_out.predicted_class[te_k_mask]),
@@ -491,6 +551,11 @@ def main() -> None:
         cal_e_loss=cal_e_loss,
         benefit_estimator=benefit_est,
         target_call_rate=0.25,
+        lambda_cost=lambda_cost,
+        bird_activity_threshold=bird_activity_threshold,
+        min_snr_db=float(routing_cfg.get("thresholds", {}).get("audio_quality_min_snr_db", -3.0)),
+        max_clipping_ratio=float(routing_cfg.get("thresholds", {}).get("max_clipping_ratio", 0.08)),
+        budget_config=budget_config,
         seed=42,
     )
 
@@ -510,10 +575,16 @@ def main() -> None:
             cal_e_loss=cal_e_loss,
             benefit_estimator=benefit_est,
             target_call_rate=br,
+            lambda_cost=lambda_cost,
+            bird_activity_threshold=bird_activity_threshold,
+            min_snr_db=float(routing_cfg.get("thresholds", {}).get("audio_quality_min_snr_db", -3.0)),
+            max_clipping_ratio=float(routing_cfg.get("thresholds", {}).get("max_clipping_ratio", 0.08)),
+            budget_config=budget_config,
             seed=42,
         )
         budget_sweep.append({
             "target_budget_rate": br,
+            "proposed_call_rate": rc_b["proposed_cost_aware_routing"]["expert_call_rate"],
             "confidence_loss": rc_b["fixed_confidence_routing"]["expected_decision_loss"],
             "entropy_loss": rc_b["entropy_routing"]["expected_decision_loss"],
             "proposed_cost_aware_loss": rc_b["proposed_cost_aware_routing"]["expected_decision_loss"],
@@ -524,13 +595,13 @@ def main() -> None:
     print("=== [Step 9/11] Feature & Architectural Ablation Studies ===", flush=True)
     ablation_results = [
         {
-            "ablation_variant": "Full Proposed Cost-Aware Router (Uncertainty + Prototype + Bird Gate + SNR)",
+            "ablation_variant": "Budgeted Benefit Router (Uncertainty + Prototype + Pre-Expert Bird Gate + SNR)",
             "expected_decision_loss": routing_comparison["proposed_cost_aware_routing"]["expected_decision_loss"],
             "known_species_macro_f1": routing_comparison["proposed_cost_aware_routing"]["known_species_macro_f1"],
             "expert_call_rate": routing_comparison["proposed_cost_aware_routing"]["expert_call_rate"],
         },
         {
-            "ablation_variant": "w/o Cost Penalty & Bird Activity Gate (Cost-Blind Benefit Router)",
+            "ablation_variant": "Cost-Blind Benefit Router (No Cost Floor or Bird Gate)",
             "expected_decision_loss": routing_comparison["cost_blind_benefit_routing"]["expected_decision_loss"],
             "known_species_macro_f1": routing_comparison["cost_blind_benefit_routing"]["known_species_macro_f1"],
             "expert_call_rate": routing_comparison["cost_blind_benefit_routing"]["expert_call_rate"],
@@ -554,8 +625,18 @@ def main() -> None:
     te_s_loss = compute_sample_loss(te_s_out.probabilities, te_s_out.bird_activity_prob, te_arr["y_known"], te_arr["is_bird"])
     te_e_loss = compute_sample_loss(te_e_out.probabilities, te_e_out.bird_activity_prob, te_arr["y_known"], te_arr["is_bird"])
     rc_student = compute_risk_coverage_curve(te_s_nov["raw_max_prob"], te_s_loss)
-    routed_loss = np.where(te_s_nov["entropy"] > 0.45, te_e_loss, te_s_loss)
-    rc_routed = compute_risk_coverage_curve(np.maximum(te_s_nov["raw_max_prob"], np.max(te_e_out.probabilities, axis=1)), routed_loss)
+    # Evaluate the actual calibrated benefit-router decisions, not an unrelated
+    # entropy heuristic or an expert confidence score when the expert was not called.
+    routed_mask = np.asarray(
+        routing_comparison["proposed_cost_aware_routing"]["expert_invoke_mask"],
+        dtype=bool,
+    )
+    routed_loss = np.where(routed_mask, te_e_loss, te_s_loss)
+    routed_probabilities = np.where(
+        routed_mask[:, None], te_e_out.probabilities, te_s_out.probabilities
+    )
+    routed_confidence = np.max(routed_probabilities, axis=1)
+    rc_routed = compute_risk_coverage_curve(routed_confidence, routed_loss)
 
     # 8. Hardware & Energy Benchmarking
     bench_s = benchmark_model_inference(student, te_arr["mels"])
@@ -609,10 +690,30 @@ def main() -> None:
         json.dumps(efficiency_metrics, indent=2), encoding="utf-8"
     )
 
-    # Save sample test selective decisions
-    bc = BudgetController()
-    bc.calibrated_threshold = 0.02
-    ca_router = CostAwareRouter(benefit_est, bc)
+    # Save decisions with a pre-expert plan. The complete expert outputs above
+    # were computed for offline counterfactual comparison; this simulation passes
+    # only the planned subset into the router, as a real deployment should do.
+    bc = BudgetController(budget_config)
+    bc.calibrated_threshold = routing_comparison["proposed_cost_aware_routing"]["calibrated_threshold"]
+    bc.calibrated_max_call_rate = routing_comparison["proposed_cost_aware_routing"]["effective_max_call_rate"]
+    ca_router = CostAwareRouter(
+        benefit_est,
+        bc,
+        bird_activity_threshold=bird_activity_threshold,
+        unknown_novelty_threshold=float(routing_cfg.get("thresholds", {}).get("unknown_bird_reject_threshold", 0.65)),
+        min_snr_db=float(routing_cfg.get("thresholds", {}).get("audio_quality_min_snr_db", -3.0)),
+        max_clipping_ratio=float(routing_cfg.get("thresholds", {}).get("max_clipping_ratio", 0.08)),
+    )
+    planned_mask = ca_router.plan_expert_invocations(
+        student_probs=te_s_out.probabilities,
+        student_bird_prob=te_s_out.bird_activity_prob,
+        student_entropy=te_s_nov["entropy"],
+        student_margin=te_s_nov["raw_margin"],
+        student_proto_dist=te_s_nov["prototype_distance"],
+        snr_db=te_arr["snr_db"],
+        clipping_ratio=te_arr["clipping_ratio"],
+        rms_energy=te_arr["rms_energy"],
+    )
     test_decisions = ca_router.decide_batch(
         student_probs=te_s_out.probabilities,
         student_bird_prob=te_s_out.bird_activity_prob,
@@ -623,9 +724,11 @@ def main() -> None:
         snr_db=te_arr["snr_db"],
         clipping_ratio=te_arr["clipping_ratio"],
         rms_energy=te_arr["rms_energy"],
-        expert_probs=te_e_out.probabilities,
-        expert_bird_prob=te_e_out.bird_activity_prob,
-        expert_novelty=te_e_nov["prototype_distance"],
+        expert_probs=te_e_out.probabilities[planned_mask],
+        expert_bird_prob=te_e_out.bird_activity_prob[planned_mask],
+        expert_novelty=te_e_nov["prototype_distance"][planned_mask],
+        invoke_mask=planned_mask,
+        policy_name="budgeted_benefit_routing",
     )
     (PROJECT_ROOT / "results" / "predictions" / "test_selective_decisions.json").write_text(
         json.dumps([d.__dict__ for d in test_decisions], indent=2), encoding="utf-8"

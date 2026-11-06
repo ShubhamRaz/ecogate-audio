@@ -4,6 +4,7 @@
 Partitions dataset into train (60%), val (15%), calibration (10%), and test (15%) splits
 preserving duplicate groups and recording sessions within the same partition.
 """
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -24,6 +25,12 @@ from src.datasets.bird_dataset import generate_reference_validation_archive
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Create group-safe EcoGate-Audio partitions.")
+    parser.add_argument(
+        "--allow-synthetic-fixture", action="store_true",
+        help="Explicitly generate/use synthetic reference data for smoke tests only.",
+    )
+    args, _unknown = parser.parse_known_args()
     cfg_path = PROJECT_ROOT / "configs" / "data" / "dataset.yaml"
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     ratios = cfg["splitting"]["ratios"]
@@ -32,6 +39,12 @@ def main() -> None:
     raw_dir = PROJECT_ROOT / "data" / "raw"
     ann_csv = PROJECT_ROOT / "data" / "manifests" / "annotations_reference.csv"
     if not discover_files_recursive(raw_dir, (".wav",)):
+        if not args.allow_synthetic_fixture:
+            raise SystemExit(
+                "[create_group_splits] No WAV files found. Mount real data under data/raw/; "
+                "use --allow-synthetic-fixture only for pipeline smoke tests."
+            )
+        print("[create_group_splits] Generating an explicitly marked SYNTHETIC fixture; not suitable for research evaluation.")
         generate_reference_validation_archive(raw_dir, ann_csv, n_per_class=24, seed=seed)
 
     records, _ = build_and_audit_manifest(raw_dir, ann_csv)

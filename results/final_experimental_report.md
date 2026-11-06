@@ -1,3 +1,5 @@
+> **STATUS: HISTORICAL SUMMARY — NOT A VERIFIED EXPERIMENTAL RESULT.** This report is retained as an audit trail. Its metrics were produced before the data-provenance, routing-threshold, average-precision, risk–coverage, and runtime-quantization corrections on this branch. Re-run the pipeline on the mounted source archive and regenerate this report before any external submission.
+
 # Final Experimental Report (`results/final_experimental_report.md`)
 
 ## 1. Summary of Executed Verification Experiments (Experiments 1–11)

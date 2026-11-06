@@ -2,7 +2,7 @@
 routing:
   seed: 42
   loss_type: "selective_cross_entropy_and_zero_one"
-  lambda_cost_tradeoff: 0.15
+  lambda_cost_tradeoff: 0.01
   estimated_student_cost_units: 1.0
   estimated_expert_cost_units: 4.5
   router_overhead_cost_units: 0.05

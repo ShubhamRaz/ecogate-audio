@@ -73,45 +73,43 @@ def compute_binary_auroc_aupr_fpr95(
     scores: np.ndarray,
 ) -> Dict[str, float]:
     """
-    Compute AUROC, AUPR, and FPR at 95% TPR cleanly using trapezoidal integration.
-    Positive class (y_positive == 1) means Unknown/OOD when evaluating novelty detection.
+    Compute tie-aware ROC-AUC, non-interpolated average precision, and FPR95.
+    All samples with equal scores are processed at the same threshold.
     """
-    y = np.asarray(y_positive, dtype=int)
-    s = np.asarray(scores, dtype=np.float64)
-    if y.size == 0 or np.all(y == 0) or np.all(y == 1):
-        return {"auroc": 0.5, "aupr": 0.5, "fpr95": 1.0}
+    y = np.asarray(y_positive, dtype=np.int64).reshape(-1)
+    scores = np.asarray(scores, dtype=np.float64).reshape(-1)
+    if y.shape != scores.shape:
+        raise ValueError("y_positive and scores must have the same shape.")
+    if y.size == 0:
+        return {"auroc": 0.5, "aupr": 0.0, "fpr95": 1.0}
+    if not np.all(np.isfinite(scores)) or not np.all(np.isin(y, [0, 1])):
+        raise ValueError("Scores must be finite and labels must be binary (0/1).")
+    n_pos = int(np.sum(y == 1))
+    n_neg = int(np.sum(y == 0))
+    if n_pos == 0 or n_neg == 0:
+        return {"auroc": 0.5, "aupr": float(n_pos > 0), "fpr95": 1.0}
 
-    desc_idx = np.argsort(-s)
-    y_sorted = y[desc_idx]
+    order = np.argsort(-scores, kind="mergesort")
+    sorted_scores = scores[order]
+    sorted_y = y[order]
+    group_ends = np.r_[np.flatnonzero(np.diff(sorted_scores)), y.size - 1]
+    tps = np.cumsum(sorted_y == 1)[group_ends].astype(np.float64)
+    fps = np.cumsum(sorted_y == 0)[group_ends].astype(np.float64)
+    tpr = np.r_[0.0, tps / n_pos, 1.0]
+    fpr = np.r_[0.0, fps / n_neg, 1.0]
+    auc_fn = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+    auroc = float(auc_fn(tpr, fpr))
 
-    n_pos = float(np.sum(y == 1))
-    n_neg = float(np.sum(y == 0))
-
-    tps = np.cumsum(y_sorted == 1).astype(np.float64)
-    fps = np.cumsum(y_sorted == 0).astype(np.float64)
-
-    tpr = np.concatenate([[0.0], tps / n_pos, [1.0]])
-    fpr = np.concatenate([[0.0], fps / n_neg, [1.0]])
-    _trapezoid = getattr(np, "trapezoid", getattr(np, "trapz", None))
-    auroc = float(_trapezoid(tpr, fpr))
-
-    prec = tps / np.maximum(1.0, tps + fps)
-    rec = tps / n_pos
-    prec_ext = np.concatenate([[1.0], prec])
-    rec_ext = np.concatenate([[0.0], rec])
-    aupr = float(_trapezoid(prec_ext, rec_ext))
-
-    # FPR at 95% TPR
-    idx95 = np.searchsorted(tpr, 0.95, side="left")
-    idx95 = min(idx95, fpr.size - 1)
-    fpr95 = float(fpr[idx95])
-
+    precision = tps / np.maximum(1.0, tps + fps)
+    recall = tps / n_pos
+    aupr = float(np.sum(np.diff(np.r_[0.0, recall]) * precision))
+    idx95 = int(np.searchsorted(tpr, 0.95, side="left"))
+    fpr95 = float(fpr[min(idx95, fpr.size - 1)])
     return {
         "auroc": round(auroc, 4),
         "aupr": round(aupr, 4),
         "fpr95": round(fpr95, 4),
     }
-
 
 def compute_open_set_metrics(
     is_unknown_true: np.ndarray,
@@ -156,19 +154,39 @@ def compute_risk_coverage_curve(
     losses: np.ndarray,
     coverages: List[float] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
 ) -> Dict[str, Any]:
-    """Compute selective risk across coverage levels and Area Under the Risk-Coverage Curve (AURC)."""
-    order = np.argsort(-confidences)
-    sorted_losses = losses[order]
-    n = losses.size
-    points = []
-    for cov in coverages:
-        k = max(1, int(round(cov * n)))
-        risk = float(np.mean(sorted_losses[:k]))
-        points.append({"coverage": round(cov, 2), "selective_risk": round(risk, 4), "abstention_rate": round(1.0 - cov, 2)})
-    all_risks = np.cumsum(sorted_losses) / np.arange(1, n + 1)
-    aurc = float(np.mean(all_risks))
-    return {"aurc": round(aurc, 4), "curve": points}
+    """Compute selective risk among the highest-confidence retained predictions."""
+    conf = np.asarray(confidences, dtype=np.float64).reshape(-1)
+    loss = np.asarray(losses, dtype=np.float64).reshape(-1)
+    if conf.shape != loss.shape:
+        raise ValueError("confidences and losses must have identical shapes.")
+    if conf.size == 0:
+        return {"aurc": 0.0, "curve": []}
+    if not np.all(np.isfinite(conf)) or not np.all(np.isfinite(loss)):
+        raise ValueError("confidences and losses must contain only finite values.")
+    if np.any(loss < 0):
+        raise ValueError("losses must be non-negative.")
+    if not coverages:
+        raise ValueError("At least one coverage level is required.")
 
+    order = np.argsort(-conf, kind="mergesort")
+    sorted_losses = loss[order]
+    n = loss.size
+    points = []
+    for coverage in coverages:
+        coverage = float(coverage)
+        if not 0.0 < coverage <= 1.0:
+            raise ValueError("Each coverage must be in (0, 1].")
+        k = min(n, max(1, int(np.ceil(coverage * n))))
+        actual_coverage = k / n
+        risk = float(np.mean(sorted_losses[:k]))
+        points.append({
+            "coverage": round(actual_coverage, 6),
+            "selective_risk": round(risk, 6),
+            "abstention_rate": round(1.0 - actual_coverage, 6),
+        })
+    cumulative_risk = np.cumsum(sorted_losses) / np.arange(1, n + 1)
+    aurc = float(np.mean(cumulative_risk))
+    return {"aurc": round(aurc, 6), "curve": points}
 
 def group_bootstrap_ci(
     group_ids: List[str],
@@ -181,6 +199,16 @@ def group_bootstrap_ci(
     Compute cluster/group-level bootstrap mean and confidence interval so correlated clips
     from the same recording session or duplicate group are resampled together.
     """
+    group_ids = [str(gid) for gid in group_ids]
+    sample_values = np.asarray(sample_values, dtype=np.float64).reshape(-1)
+    if len(group_ids) != sample_values.size:
+        raise ValueError("group_ids and sample_values must have identical lengths.")
+    if not np.all(np.isfinite(sample_values)):
+        raise ValueError("sample_values must contain only finite values.")
+    if n_boot < 1:
+        raise ValueError("n_boot must be at least 1.")
+    if not 0.0 < ci < 1.0:
+        raise ValueError("ci must be between 0 and 1.")
     rng = np.random.RandomState(seed)
     group_to_idxs: Dict[str, List[int]] = {}
     for idx, gid in enumerate(group_ids):

@@ -29,7 +29,15 @@ def benchmark_model_inference(
     Measure batch-size-1 latency, batch latency, peak memory allocation, parameter storage,
     and power/energy metrics.
     """
-    single_input = sample_input[0] if sample_input.ndim > 2 else sample_input[0]
+    sample_input = np.asarray(sample_input)
+    if sample_input.ndim == 3:
+        single_input = sample_input[0]
+    elif sample_input.ndim == 2:
+        single_input = sample_input
+    else:
+        raise ValueError("sample_input must have shape (N, M, T) or (M, T).")
+    if n_warmup < 0 or n_runs < 1:
+        raise ValueError("n_warmup must be non-negative and n_runs must be at least 1.")
     for _ in range(n_warmup):
         model.predict(single_input)
 
@@ -43,9 +51,11 @@ def benchmark_model_inference(
     tracemalloc.stop()
 
     params = model.param_count()
-    storage_kb = (params * 4) / 1024.0
-    # Approximate MACs per 3-sec clip spectrogram (64x301)
-    est_macs = int(params * 301)
+    storage_bytes = (
+        int(model.storage_bytes()) if callable(getattr(model, "storage_bytes", None))
+        else int(params * 4)
+    )
+    storage_kb = storage_bytes / 1024.0
 
     mean_lat_ms = float(np.mean(latencies_ms))
     p95_lat_ms = float(np.percentile(latencies_ms, 95))
@@ -60,10 +70,14 @@ def benchmark_model_inference(
     return {
         "model_id": getattr(model, "model_id", "unknown"),
         "parameters": params,
-        "estimated_macs_per_clip": est_macs,
-        "estimated_flops_per_clip": est_macs * 2,
-        "model_storage_kb_fp32": round(storage_kb, 2),
-        "model_storage_kb_int8": round(storage_kb / 4.0, 2),
+        "estimated_macs_per_clip": None,
+        "estimated_flops_per_clip": None,
+        "complexity_estimate_status": "not_available_exact_operator_accounting_required",
+        "actual_stored_array_bytes": storage_bytes,
+        "actual_stored_array_kb": round(storage_kb, 3),
+        "model_storage_kb_fp32_equivalent": round((params * 4) / 1024.0, 3),
+        "model_storage_kb_int8": round(storage_kb, 3) if callable(getattr(model, "storage_bytes", None)) else None,
+        "runtime_compute_dtype": getattr(model, "runtime_compute_dtype", "float32"),
         "batch_size_1_cpu_latency_mean_ms": round(mean_lat_ms, 3),
         "batch_size_1_cpu_latency_p95_ms": round(p95_lat_ms, 3),
         "peak_memory_kb": round(peak_bytes / 1024.0, 2),

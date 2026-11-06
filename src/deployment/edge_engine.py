@@ -27,12 +27,14 @@ def dequantize_array_int8(q: np.ndarray, scale: float) -> np.ndarray:
 
 class QuantizedStudentEdgeModel:
     """
-    INT8 Weight-Quantized Student Model with post-quantization temperature recalibration.
-    Reduces weight storage by ~4x for constrained edge targets while maintaining calibrated probabilities.
+    INT8-compressed weight storage with post-compression temperature recalibration.
+
+    IMPORTANT: predict() dequantizes weights to float32 before matrix multiplication.
+    This is storage compression, not integer inference or an INT8 compute-speedup path.
     """
 
     def __init__(self, fp32_student: LightweightStudentCNN) -> None:
-        self.model_id = f"{fp32_student.model_id}_int8"
+        self.model_id = f"{fp32_student.model_id}_int8_weight_storage_fp32_compute"
         self.bn_mean = fp32_student.bn_mean.copy()
         self.bn_std = fp32_student.bn_std.copy()
         self.b_proj = fp32_student.b_proj.copy()
@@ -49,6 +51,17 @@ class QuantizedStudentEdgeModel:
 
     def param_count(self) -> int:
         return int(self.W_proj_q.size + self.b_proj.size + self.W_res_q.size + self.b_res.size + self.W_cls_q.size + self.b_cls.size + self.W_bird_q.size + 1)
+
+    def storage_bytes(self) -> int:
+        """Actual stored ndarray bytes, including float32 biases and normalizers."""
+        arrays = (self.W_proj_q, self.W_res_q, self.W_cls_q, self.W_bird_q,
+                  self.b_proj, self.b_res, self.b_cls, self.bn_mean, self.bn_std)
+        scalar_arrays = np.asarray(
+            [self.s_proj, self.s_res, self.s_cls, self.s_bird,
+             self.b_bird, self.recalibrated_temperature],
+            dtype=np.float32,
+        )
+        return int(sum(array.nbytes for array in arrays) + scalar_arrays.nbytes)
 
     def recalibrate(self, cal_mels: np.ndarray, cal_y_known: np.ndarray) -> Dict[str, float]:
         out = self.predict(cal_mels, temperature=1.0)
@@ -125,8 +138,12 @@ class QuantizedStudentEdgeModel:
             "artifact_path": str(path),
             "size_bytes": path.stat().st_size,
             "onnx_runtime_available": False,
+            "weights_storage_dtype": "int8",
+            "runtime_compute_dtype": "float32",
+            "integer_matmul": False,
             "export_note": (
-                "Exported portable INT8 NPZ deployment artifact. ONNX export interface is implemented "
-                "and automatically falls back to portable INT8 NPZ when torch/onnx packages are absent."
+                "INT8 weight arrays are stored in NPZ, but predict() dequantizes them to float32 "
+                "before matrix multiplication. Integer-only inference and ONNX Runtime acceleration "
+                "are not implemented by this class."
             ),
         }

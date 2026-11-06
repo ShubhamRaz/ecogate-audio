@@ -1,3 +1,5 @@
+> **STATUS: INVALIDATED HISTORICAL OUTPUT — DO NOT CITE.** The prior controller allowed target_call_rate to bypass both the configured maximum call rate and the cost threshold. The prior cost-blind and proposed rows were identical, so they did not demonstrate a cost-aware gain. The corrected controller now applies a full lambda × incremental expert-cost floor plus hard call-rate/energy caps. A fresh run is required; fixed per-call cost cannot change the sample ranking at a matched budget unless per-sample costs or constraints vary.
+
 # Cost-Aware Expert Routing Comparison & Ablation Report (`results/routing_comparison.md`)
 
 ## 1. Ten-Policy Routing Comparison on Held-Out Test Split (Matched Target Budget = 25%)
