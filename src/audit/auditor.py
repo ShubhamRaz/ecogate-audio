@@ -90,6 +90,7 @@ class AudioRecordManifest:
     inclusion_status: str
     exclusion_reason: str
     split: str = "unassigned"
+    source_type: str = "local_archive_source_unverified"
 
 
 def compute_file_sha256(path: Path) -> str:
@@ -209,6 +210,9 @@ def build_and_audit_manifest(
                 if rel_p and not (raw_dir / rel_p).exists():
                     missing_annotation_paths.append(rel_p)
 
+    source_marker = raw_dir / ".ecogate_synthetic_reference_fixture"
+    source_type = "synthetic_reference_fixture" if source_marker.exists() else "local_archive_source_unverified"
+
     records: List[AudioRecordManifest] = []
     sha_to_indices: Dict[str, List[int]] = {}
     wave_sha_to_indices: Dict[str, List[int]] = {}
@@ -245,6 +249,7 @@ def build_and_audit_manifest(
                 matches_esc50_pattern=is_esc50,
                 inclusion_status="excluded",
                 exclusion_reason=err,
+                source_type=source_type,
             )
             records.append(rec)
             continue
@@ -287,6 +292,7 @@ def build_and_audit_manifest(
             matches_esc50_pattern=is_esc50,
             inclusion_status=inclusion,
             exclusion_reason=excl_reason,
+            source_type=source_type,
         )
         records.append(rec)
 
@@ -323,6 +329,8 @@ def build_and_audit_manifest(
             esc50_count += 1
 
     audit_summary = {
+        "dataset_source_type": source_type,
+        "synthetic_fixture_marker_present": source_marker.exists(),
         "local_execution_findings": {
             "total_wav_files_scanned": len(wav_files),
             "total_image_files_scanned": len(jpg_files),
