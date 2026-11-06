@@ -187,8 +187,9 @@ def evaluate_routing_policies_on_split(
     seed: int = 42,
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Compare all 10 required routing baselines on held-out test split at matched expert-call rate,
-    calibrated strictly on the calibration split.
+    Compare 10 routing policies on held-out test data. target_call_rate is a maximum
+    call-rate cap; cost and pre-expert quality gates may result in lower realized rates.
+    All thresholds are calibrated strictly on the calibration split.
     """
     n = test_arr["y_known"].size
     s_loss = compute_sample_loss(s_out.probabilities, s_out.bird_activity_prob, test_arr["y_known"], test_arr["is_bird"])
