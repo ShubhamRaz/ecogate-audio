@@ -190,6 +190,41 @@ class CostAwareRouter:
             if invoke_mask.size != n:
                 raise ValueError("invoke_mask must have one value per sample.")
 
+        # Expert results may be supplied either for the full batch or only for
+        # indices selected by the pre-expert planner. Scatter sparse results into
+        # student defaults so the expensive model need only run on selected clips.
+        call_indices = np.flatnonzero(invoke_mask)
+        expert_probs_full = None
+        expert_bird_full = None
+        expert_novelty_full = None
+        if expert_probs is not None:
+            exp_p = np.asarray(expert_probs, dtype=np.float64)
+            if exp_p.ndim != 2 or exp_p.shape[1] != student_probs.shape[1]:
+                raise ValueError("expert_probs must have shape (N, C) or (number_of_calls, C).")
+            if exp_p.shape[0] == n:
+                expert_probs_full = exp_p
+            elif exp_p.shape[0] == call_indices.size:
+                expert_probs_full = np.asarray(student_probs, dtype=np.float64).copy()
+                expert_probs_full[call_indices] = exp_p
+            else:
+                raise ValueError("expert_probs row count must equal batch size or number of planned calls.")
+
+        def _expand_expert_vector(values: Optional[np.ndarray], default: np.ndarray, name: str) -> np.ndarray:
+            if values is None:
+                return np.asarray(default, dtype=np.float64).copy()
+            arr = np.asarray(values, dtype=np.float64).reshape(-1)
+            if arr.size == n:
+                return arr
+            if arr.size == call_indices.size:
+                full = np.asarray(default, dtype=np.float64).copy()
+                full[call_indices] = arr
+                return full
+            raise ValueError(f"{name} must contain one value per sample or per planned expert call.")
+
+        if expert_probs_full is not None:
+            expert_bird_full = _expand_expert_vector(expert_bird_prob, student_bird_prob, "expert_bird_prob")
+            expert_novelty_full = _expand_expert_vector(expert_novelty, student_novelty, "expert_novelty")
+
         decisions: List[SelectiveDecision] = []
         cfg = self.budget_controller.cfg
 
@@ -215,9 +250,9 @@ class CostAwareRouter:
                 continue
 
             use_exp = bool(invoke_mask[i]) and (expert_probs is not None)
-            probs_i = expert_probs[i] if use_exp else student_probs[i]
-            bird_p_i = float(expert_bird_prob[i]) if (use_exp and expert_bird_prob is not None) else float(student_bird_prob[i])
-            nov_i = float(expert_novelty[i]) if (use_exp and expert_novelty is not None) else float(student_novelty[i])
+            probs_i = expert_probs_full[i] if use_exp else student_probs[i]
+            bird_p_i = float(expert_bird_full[i]) if use_exp else float(student_bird_prob[i])
+            nov_i = float(expert_novelty_full[i]) if use_exp else float(student_novelty[i])
             cost_i = (
                 cfg.student_cost_units + cfg.router_overhead_units + cfg.expert_cost_units
                 if use_exp
