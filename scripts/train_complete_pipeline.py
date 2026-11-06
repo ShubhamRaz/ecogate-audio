@@ -553,6 +553,8 @@ def main() -> None:
         target_call_rate=0.25,
         lambda_cost=lambda_cost,
         bird_activity_threshold=bird_activity_threshold,
+        min_snr_db=float(routing_cfg.get("thresholds", {}).get("audio_quality_min_snr_db", -3.0)),
+        max_clipping_ratio=float(routing_cfg.get("thresholds", {}).get("max_clipping_ratio", 0.08)),
         budget_config=budget_config,
         seed=42,
     )
@@ -686,10 +688,29 @@ def main() -> None:
         json.dumps(efficiency_metrics, indent=2), encoding="utf-8"
     )
 
-    # Save sample test selective decisions
-    bc = BudgetController()
-    bc.calibrated_threshold = 0.02
-    ca_router = CostAwareRouter(benefit_est, bc)
+    # Save decisions with a pre-expert plan. The complete expert outputs above
+    # were computed for offline counterfactual comparison; this simulation passes
+    # only the planned subset into the router, as a real deployment should do.
+    bc = BudgetController(budget_config)
+    bc.calibrated_threshold = routing_comparison["proposed_cost_aware_routing"]["calibrated_threshold"]
+    ca_router = CostAwareRouter(
+        benefit_est,
+        bc,
+        bird_activity_threshold=bird_activity_threshold,
+        unknown_novelty_threshold=float(routing_cfg.get("thresholds", {}).get("unknown_bird_reject_threshold", 0.65)),
+        min_snr_db=float(routing_cfg.get("thresholds", {}).get("audio_quality_min_snr_db", -3.0)),
+        max_clipping_ratio=float(routing_cfg.get("thresholds", {}).get("max_clipping_ratio", 0.08)),
+    )
+    planned_mask = ca_router.plan_expert_invocations(
+        student_probs=te_s_out.probabilities,
+        student_bird_prob=te_s_out.bird_activity_prob,
+        student_entropy=te_s_nov["entropy"],
+        student_margin=te_s_nov["raw_margin"],
+        student_proto_dist=te_s_nov["prototype_distance"],
+        snr_db=te_arr["snr_db"],
+        clipping_ratio=te_arr["clipping_ratio"],
+        rms_energy=te_arr["rms_energy"],
+    )
     test_decisions = ca_router.decide_batch(
         student_probs=te_s_out.probabilities,
         student_bird_prob=te_s_out.bird_activity_prob,
@@ -700,9 +721,11 @@ def main() -> None:
         snr_db=te_arr["snr_db"],
         clipping_ratio=te_arr["clipping_ratio"],
         rms_energy=te_arr["rms_energy"],
-        expert_probs=te_e_out.probabilities,
-        expert_bird_prob=te_e_out.bird_activity_prob,
-        expert_novelty=te_e_nov["prototype_distance"],
+        expert_probs=te_e_out.probabilities[planned_mask],
+        expert_bird_prob=te_e_out.bird_activity_prob[planned_mask],
+        expert_novelty=te_e_nov["prototype_distance"][planned_mask],
+        invoke_mask=planned_mask,
+        policy_name="budgeted_benefit_routing",
     )
     (PROJECT_ROOT / "results" / "predictions" / "test_selective_decisions.json").write_text(
         json.dumps([d.__dict__ for d in test_decisions], indent=2), encoding="utf-8"
