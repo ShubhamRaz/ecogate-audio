@@ -269,6 +269,21 @@ class TestEcoGateAudioSuite(unittest.TestCase):
         ))
         controller.calibrated_threshold = 0.5
         router = CostAwareRouter(estimator, controller, bird_activity_threshold=0.5)
+        # A caller must not pass expert outputs before asking the planner for a mask.
+        with self.assertRaises(ValueError):
+            router.decide_batch(
+                student_probs=student_probs,
+                student_bird_prob=bird,
+                student_novelty=np.full(n, 0.1),
+                student_entropy=entropy,
+                student_margin=margin,
+                student_proto_dist=proto,
+                snr_db=snr,
+                clipping_ratio=clipping,
+                rms_energy=rms,
+                expert_probs=np.tile(np.array([[0.25, 0.25, 0.25, 0.25]]), (n, 1)),
+            )
+
         first_mask = router.plan_expert_invocations(
             student_probs, bird, entropy, margin, proto, snr, clipping, rms
         )
