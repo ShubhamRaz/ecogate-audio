@@ -73,45 +73,43 @@ def compute_binary_auroc_aupr_fpr95(
     scores: np.ndarray,
 ) -> Dict[str, float]:
     """
-    Compute AUROC, AUPR, and FPR at 95% TPR cleanly using trapezoidal integration.
-    Positive class (y_positive == 1) means Unknown/OOD when evaluating novelty detection.
+    Compute tie-aware ROC-AUC, non-interpolated average precision, and FPR95.
+    All samples with equal scores are processed at the same threshold.
     """
-    y = np.asarray(y_positive, dtype=int)
-    s = np.asarray(scores, dtype=np.float64)
-    if y.size == 0 or np.all(y == 0) or np.all(y == 1):
-        return {"auroc": 0.5, "aupr": 0.5, "fpr95": 1.0}
+    y = np.asarray(y_positive, dtype=np.int64).reshape(-1)
+    scores = np.asarray(scores, dtype=np.float64).reshape(-1)
+    if y.shape != scores.shape:
+        raise ValueError("y_positive and scores must have the same shape.")
+    if y.size == 0:
+        return {"auroc": 0.5, "aupr": 0.0, "fpr95": 1.0}
+    if not np.all(np.isfinite(scores)) or not np.all(np.isin(y, [0, 1])):
+        raise ValueError("Scores must be finite and labels must be binary (0/1).")
+    n_pos = int(np.sum(y == 1))
+    n_neg = int(np.sum(y == 0))
+    if n_pos == 0 or n_neg == 0:
+        return {"auroc": 0.5, "aupr": float(n_pos > 0), "fpr95": 1.0}
 
-    desc_idx = np.argsort(-s)
-    y_sorted = y[desc_idx]
+    order = np.argsort(-scores, kind="mergesort")
+    sorted_scores = scores[order]
+    sorted_y = y[order]
+    group_ends = np.r_[np.flatnonzero(np.diff(sorted_scores)), y.size - 1]
+    tps = np.cumsum(sorted_y == 1)[group_ends].astype(np.float64)
+    fps = np.cumsum(sorted_y == 0)[group_ends].astype(np.float64)
+    tpr = np.r_[0.0, tps / n_pos, 1.0]
+    fpr = np.r_[0.0, fps / n_neg, 1.0]
+    auc_fn = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+    auroc = float(auc_fn(tpr, fpr))
 
-    n_pos = float(np.sum(y == 1))
-    n_neg = float(np.sum(y == 0))
-
-    tps = np.cumsum(y_sorted == 1).astype(np.float64)
-    fps = np.cumsum(y_sorted == 0).astype(np.float64)
-
-    tpr = np.concatenate([[0.0], tps / n_pos, [1.0]])
-    fpr = np.concatenate([[0.0], fps / n_neg, [1.0]])
-    _trapezoid = getattr(np, "trapezoid", getattr(np, "trapz", None))
-    auroc = float(_trapezoid(tpr, fpr))
-
-    prec = tps / np.maximum(1.0, tps + fps)
-    rec = tps / n_pos
-    prec_ext = np.concatenate([[1.0], prec])
-    rec_ext = np.concatenate([[0.0], rec])
-    aupr = float(_trapezoid(prec_ext, rec_ext))
-
-    # FPR at 95% TPR
-    idx95 = np.searchsorted(tpr, 0.95, side="left")
-    idx95 = min(idx95, fpr.size - 1)
-    fpr95 = float(fpr[idx95])
-
+    precision = tps / np.maximum(1.0, tps + fps)
+    recall = tps / n_pos
+    aupr = float(np.sum(np.diff(np.r_[0.0, recall]) * precision))
+    idx95 = int(np.searchsorted(tpr, 0.95, side="left"))
+    fpr95 = float(fpr[min(idx95, fpr.size - 1)])
     return {
         "auroc": round(auroc, 4),
         "aupr": round(aupr, 4),
         "fpr95": round(fpr95, 4),
     }
-
 
 def compute_open_set_metrics(
     is_unknown_true: np.ndarray,
