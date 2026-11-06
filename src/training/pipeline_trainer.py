@@ -34,6 +34,41 @@ from src.routing.margin_router import MarginRouter
 from src.routing.prototype_router import PrototypeRouter
 
 
+def _sample_group_ids(samples: List[FeatureSample]) -> List[str]:
+    """Return connected-component IDs linking duplicate clips and known source/session groups."""
+    n = len(samples)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[ri] = rj
+
+    duplicate_owner: Dict[str, int] = {}
+    source_owner: Dict[str, int] = {}
+    for idx, sample in enumerate(samples):
+        dup = sample.duplicate_group_id
+        src = sample.source_id
+        if dup and dup != "unknown":
+            if dup in duplicate_owner:
+                union(idx, duplicate_owner[dup])
+            else:
+                duplicate_owner[dup] = idx
+        if src and src != "unknown":
+            if src in source_owner:
+                union(idx, source_owner[src])
+            else:
+                source_owner[src] = idx
+    roots = [find(i) for i in range(n)]
+    return [f"group_{root:08d}" for root in roots]
+
+
 def prepare_arrays(
     samples: List[FeatureSample],
     normalizer: FeatureNormalizer,
@@ -46,7 +81,7 @@ def prepare_arrays(
     snr_db = np.array([s.snr_db for s in samples], dtype=np.float32)
     clip_r = np.array([s.clipping_ratio for s in samples], dtype=np.float32)
     rms = np.array([s.rms_energy for s in samples], dtype=np.float32)
-    groups = [s.duplicate_group_id for s in samples]
+    groups = _sample_group_ids(samples)
     sources = [s.source_id for s in samples]
     return {
         "mels": mels,
@@ -72,7 +107,10 @@ def generate_oof_routing_examples(
     predict on held-out fold, and compute per-recording observed loss reduction
     d_i = L(f_s(x_i), y_i) - L(f_e(x_i), y_i) and pre-expert feature matrix Z_oof.
     """
-    unique_groups = sorted(list({s.duplicate_group_id for s in train_samples}))
+    sample_groups = _sample_group_ids(train_samples)
+    unique_groups = sorted(set(sample_groups))
+    if len(unique_groups) < n_folds:
+        raise ValueError(f"Need at least {n_folds} independent groups for OOF routing; found {len(unique_groups)}.")
     rng = np.random.RandomState(seed)
     shuffled_groups = [unique_groups[i] for i in rng.permutation(len(unique_groups))]
     group_to_fold = {g: (idx % n_folds) for idx, g in enumerate(shuffled_groups)}
@@ -84,8 +122,8 @@ def generate_oof_routing_examples(
 
     for fold in range(n_folds):
         print(f"  [OOF] Training fold {fold + 1}/{n_folds}...", flush=True)
-        fold_train = [s for s in train_samples if group_to_fold[s.duplicate_group_id] != fold]
-        fold_val = [s for s in train_samples if group_to_fold[s.duplicate_group_id] == fold]
+        fold_train = [s for s, gid in zip(train_samples, sample_groups) if group_to_fold[gid] != fold]
+        fold_val = [s for s, gid in zip(train_samples, sample_groups) if group_to_fold[gid] == fold]
         if not fold_train or not fold_val:
             continue
 
