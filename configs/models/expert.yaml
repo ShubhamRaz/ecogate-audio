@@ -1,0 +1,25 @@
+# Strong Expert Model Configuration
+model:
+  model_id: "ecogate_expert_multiscale_ast_v1"
+  architecture: "PretrainedOrMultiScaleSpectrogramExpert"
+  candidate_evaluated:
+    - name: "EfficientNet-B0-Audio / MultiScaleAttentionExpert"
+      selected: true
+      license: "Apache-2.0"
+      rationale: "Balanced compute/accuracy uplift on 3s 32kHz clips with offline/CPU/GPU compatibility"
+    - name: "PaSST-S"
+      selected: false
+      license: "Apache-2.0"
+      rationale: "High transformer memory footprint on 6GB VRAM and edge targets"
+    - name: "AST"
+      selected: false
+      license: "BSD-3-Clause"
+      rationale: "86M parameters; excessive latency for edge fallback"
+  input_mels: 64
+  base_channels: 32
+  num_attention_heads: 4
+  embedding_dim: 128
+  num_known_species: 4
+  freeze_backbone_initial_epochs: 2
+  min_required_macro_f1_uplift: 0.02
+  seed: 42

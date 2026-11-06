@@ -1,0 +1,180 @@
+{
+  "duplicate_group_count": 43,
+  "total_files_in_duplicate_groups": 88,
+  "duplicate_groups": {
+    "dupgroup_0756": [
+      "common_waxbill\\common_waxbill_duplicate_copy.wav",
+      "common_waxbill\\common_waxbill_sess00_clip000.wav"
+    ],
+    "dupgroup_0780": [
+      "environmental_noise\\1-010000-A-40.wav",
+      "environmental_noise\\environmental_noise_duplicate_copy.wav"
+    ],
+    "dupgroup_4335": [
+      "other_birds\\Other_Birds.sel00.08.ch01.240720.035413.64..wav.534bd525.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.09.ch01.240720.035413.64..wav.534bd569.ingestion-74f769ff6b-44hkz.wav"
+    ],
+    "dupgroup_4336": [
+      "other_birds\\Other_Birds.sel00.10.ch01.240720.035416.64..wav.534bd550.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.11.ch01.240720.035416.64..wav.534bd4ms.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4341": [
+      "other_birds\\Other_Birds.sel00.104.ch01.240720.035837.64..wav.534bdb54.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.105.ch01.240720.035837.64..wav.534bdau9.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4344": [
+      "other_birds\\Other_Birds.sel00.108.ch01.240720.035846.64..wav.534bdb26.ingestion-74f769ff6b-ljk4b.wav",
+      "other_birds\\Other_Birds.sel00.109.ch01.240720.035846.64..wav.534bdb7r.ingestion-74f769ff6b-ggqxl.wav"
+    ],
+    "dupgroup_4346": [
+      "other_birds\\Other_Birds.sel00.111.ch01.240720.035852.64..wav.534bdbj1.ingestion-74f769ff6b-ljk4b.wav",
+      "other_birds\\Other_Birds.sel00.112.ch01.240720.035852.64..wav.534bdbit.ingestion-74f769ff6b-ggqxl.wav"
+    ],
+    "dupgroup_4351": [
+      "other_birds\\Other_Birds.sel00.117.ch01.240720.035910.64..wav.534bdc4j.ingestion-74f769ff6b-ljk4b.wav",
+      "other_birds\\Other_Birds.sel00.118.ch01.240720.035910.64..wav.534bdc0l.ingestion-74f769ff6b-ggqxl.wav"
+    ],
+    "dupgroup_4352": [
+      "other_birds\\Other_Birds.sel00.119.ch01.240720.035913.64..wav.534bdbvg.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.120.ch01.240720.035913.64..wav.534bdc7v.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4354": [
+      "other_birds\\Other_Birds.sel00.121.ch01.240720.035916.64..wav.534bdc3s.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.122.ch01.240720.035916.64..wav.534bdbsn.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4362": [
+      "other_birds\\Other_Birds.sel00.13.ch01.240720.035422.64..wav.534bd4oa.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.14.ch01.240720.035422.64..wav.534bd4rm.ingestion-74f769ff6b-ggqxl.wav"
+    ],
+    "dupgroup_4383": [
+      "other_birds\\Other_Birds.sel00.15.ch01.240720.035425.64..wav.534bd4jf.ingestion-74f769ff6b-ljk4b.wav",
+      "other_birds\\Other_Birds.sel00.16.ch01.240720.035425.64..wav.534bd50u.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4404": [
+      "other_birds\\Other_Birds.sel00.17.ch01.240720.035428.64..wav.534bd4ub.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.18.ch01.240720.035428.64..wav.534bd4k4.ingestion-74f769ff6b-44hkz.wav"
+    ],
+    "dupgroup_4522": [
+      "other_birds\\Other_Birds.sel00.278.ch01.240720.040707.64..wav.534bdlls.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.279.ch01.240720.040707.64..wav.534bdlos.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4524": [
+      "other_birds\\Other_Birds.sel00.280.ch01.240720.040710.64..wav.534bdm4r.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.281.ch01.240720.040710.64..wav.534bdm6n.ingestion-74f769ff6b-44hkz.wav"
+    ],
+    "dupgroup_4546": [
+      "other_birds\\Other_Birds.sel00.301.ch01.240720.040816.64..wav.534bdnau.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.302.ch01.240720.040816.64..wav.534bdnan.ingestion-74f769ff6b-44hkz.wav"
+    ],
+    "dupgroup_4592": [
+      "other_birds\\Other_Birds.sel00.344.ch01.240720.041025.64..wav.534bdptm.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.345.ch01.240720.041025.64..wav.534bdq33.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4596": [
+      "other_birds\\Other_Birds.sel00.349.ch01.240720.041037.64..wav.534bdqgf.ingestion-74f769ff6b-ljk4b.wav",
+      "other_birds\\Other_Birds.sel00.350.ch01.240720.041037.64..wav.534bdqeo.ingestion-74f769ff6b-44hkz.wav"
+    ],
+    "dupgroup_4681": [
+      "other_birds\\Other_Birds.sel00.43.ch01.240720.035543.64..wav.534bd77i.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.44.ch01.240720.035543.64..wav.534bd7a3.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4731": [
+      "other_birds\\Other_Birds.sel00.476.ch01.240720.041652.64..wav.534be1u0.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.477.ch01.240720.041652.64..wav.534be21m.ingestion-74f769ff6b-44hkz.wav"
+    ],
+    "dupgroup_4750": [
+      "other_birds\\Other_Birds.sel00.495.ch01.240720.041743.64..wav.534be31p.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.496.ch01.240720.041743.64..wav.534be38m.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4751": [
+      "other_birds\\Other_Birds.sel00.497.ch01.240720.041749.64..wav.534be3k5.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.498.ch01.240720.041749.64..wav.534be3pt.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4773": [
+      "other_birds\\Other_Birds.sel00.518.ch01.240720.041849.64..wav.534be4q9.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.519.ch01.240720.041849.64..wav.534be56v.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4789": [
+      "other_birds\\Other_Birds.sel00.533.ch01.240720.041931.64..wav.534be5pv.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.534.ch01.240720.041931.64..wav.534be5sn.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4790": [
+      "other_birds\\Other_Birds.sel00.535.ch01.240720.041934.64..wav.534be5tb.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.536.ch01.240720.041934.64..wav.534be64a.ingestion-74f769ff6b-ggqxl.wav"
+    ],
+    "dupgroup_4802": [
+      "other_birds\\Other_Birds.sel00.547.ch01.240720.042013.64..wav.534be6lo.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.548.ch01.240720.042013.64..wav.534be6rp.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.549.ch01.240720.042013.64..wav.534be6r1.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4915": [
+      "other_birds\\Other_Birds.sel00.652.ch01.240720.043940.64..wav.534bef7j.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.653.ch01.240720.043940.64..wav.534befce.ingestion-74f769ff6b-44hkz.wav"
+    ],
+    "dupgroup_4917": [
+      "other_birds\\Other_Birds.sel00.656.ch01.240720.043946.64..wav.534beg4p.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.657.ch01.240720.043946.64..wav.534beg52.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4919": [
+      "other_birds\\Other_Birds.sel00.659.ch01.240720.043952.64..wav.534beg9e.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.660.ch01.240720.043952.64..wav.534begaq.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4922": [
+      "other_birds\\Other_Birds.sel00.662.ch01.240720.043958.64..wav.534begdh.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.663.ch01.240720.043958.64..wav.534begeh.ingestion-74f769ff6b-ljk4b.wav",
+      "other_birds\\Other_Birds.sel00.664.ch01.240720.043958.64..wav.534begea.ingestion-74f769ff6b-ggqxl.wav"
+    ],
+    "dupgroup_4941": [
+      "other_birds\\Other_Birds.sel00.681.ch01.240720.044049.64..wav.534behnb.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.682.ch01.240720.044049.64..wav.534behq2.ingestion-74f769ff6b-44hkz.wav"
+    ],
+    "dupgroup_4942": [
+      "other_birds\\Other_Birds.sel00.683.ch01.240720.044055.64..wav.534bei0l.ingestion-74f769ff6b-ljk4b.wav",
+      "other_birds\\Other_Birds.sel00.684.ch01.240720.044055.64..wav.534bei0r.ingestion-74f769ff6b-ggqxl.wav"
+    ],
+    "dupgroup_4943": [
+      "other_birds\\Other_Birds.sel00.685.ch01.240720.044058.64..wav.534bei44.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.686.ch01.240720.044058.64..wav.534bei6m.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_4947": [
+      "other_birds\\Other_Birds.sel00.69.ch01.240720.035658.64..wav.534bd8oa.ingestion-74f769ff6b-ggqxl.wav",
+      "other_birds\\Other_Birds.sel00.70.ch01.240720.035658.64..wav.534bd8o0.ingestion-74f769ff6b-44hkz.wav"
+    ],
+    "dupgroup_5080": [
+      "other_birds\\Other_Birds.sel00.811.ch01.240720.044722.64..wav.534bes1h.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.812.ch01.240720.044722.64..wav.534bes47.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_5085": [
+      "other_birds\\Other_Birds.sel00.818.ch01.240720.044740.64..wav.534besri.ingestion-74f769ff6b-ljk4b.wav",
+      "other_birds\\Other_Birds.sel00.819.ch01.240720.044740.64..wav.534besuh.ingestion-74f769ff6b-ggqxl.wav"
+    ],
+    "dupgroup_5168": [
+      "other_birds\\Other_Birds.sel00.894.ch01.240720.045128.64..wav.534bfe3u.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.895.ch01.240720.045128.64..wav.534bfe6q.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_5227": [
+      "other_birds\\Other_Birds.sel00.95.ch01.240720.035813.64..wav.534bdakk.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.96.ch01.240720.035813.64..wav.534bdajg.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_5262": [
+      "other_birds\\Other_Birds.sel00.982.ch01.240720.045552.64..wav.534bftl8.ingestion-74f769ff6b-44hkz.wav",
+      "other_birds\\Other_Birds.sel00.983.ch01.240720.045552.64..wav.534bftot.ingestion-74f769ff6b-ljk4b.wav"
+    ],
+    "dupgroup_5273": [
+      "other_birds\\other_birds_duplicate_copy.wav",
+      "other_birds\\other_birds_sess00_clip000.wav"
+    ],
+    "dupgroup_6546": [
+      "red_billed_quelea\\red_billed_quelea_duplicate_copy.wav",
+      "red_billed_quelea\\red_billed_quelea_sess00_clip000.wav"
+    ],
+    "dupgroup_7658": [
+      "village_weaver\\village_weaver_duplicate_copy.wav",
+      "village_weaver\\village_weaver_sess00_clip000.wav"
+    ],
+    "dupgroup_8593": [
+      "yellow_fronted_canary\\yellow_fronted_canary_duplicate_copy.wav",
+      "yellow_fronted_canary\\yellow_fronted_canary_sess00_clip000.wav"
+    ]
+  }
+}

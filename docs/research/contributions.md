@@ -1,0 +1,8 @@
+# Proposed Research Contributions (`docs/research/contributions.md`)
+
+*Note: In accordance with rigorous scientific practice, algorithmic mechanisms are framed as structured engineering and empirical investigations of established cost-sensitive decision principles rather than claims of foundational mathematical novelty.*
+
+1. **Rigorous Acoustic Data Audit & Group-Safe Evaluation Protocol**: A reproducible auditing toolkit (`src/audit/auditor.py`) that performs exact SHA-256 and decoded float32 waveform hashing, verifies ESC-50 noise provenance ([Piczak, 2015](https://github.com/karolpiczak/esc-50)), logs missing annotation records without silent deletion, and constructs union-find duplicate- and session-grouped splits (`train`, `val`, `calibration`, `test`).
+2. **Four-Way Open-Set Acoustic Semantics**: Explicit separation of predictions into `known_species`, `bird_unfamiliar`, `nonbird`, and `unresolved` via an integrated audio quality gate, bird-activity detector, and six configurable open-set scorers ([Liu et al., 2020](https://proceedings.neurips.cc/paper/2020/hash/f5496252609c43eb8a3d147ab9b9c006-Abstract.html)).
+3. **Out-of-Fold Cost-Aware Expert Benefit Routing**: Implementation and empirical comparison of an out-of-fold trained benefit estimator $\hat{\Delta}(z)$ that predicts when invoking a stronger multi-scale expert model reduces composite decision loss by more than $\lambda \cdot C_{\text{expert}}$, evaluated against nine baseline policies at matched budgets.
+4. **End-to-End Reproducible Software & Edge Benchmarking**: Complete INT8 student quantization with post-quantization temperature recalibration, honest compute vs. physical power reporting, FastAPI service, and React monitoring dashboard.

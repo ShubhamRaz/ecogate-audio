@@ -1,0 +1,27 @@
+# Edge Deployment & Benchmarking Configuration
+deployment:
+  export_format: "onnx_and_npz_int8"
+  quantization:
+    mode: "dynamic_int8"
+    recalibrate_temperature_after_quant: true
+  quality_gate:
+    reject_corrupt: true
+    reject_clipped_above: 0.10
+    reject_low_rms_below: 0.0003
+  target_devices:
+    - name: "Ubuntu/Linux CPU Reference"
+      real_time_capable: true
+      max_latency_ms: 250.0
+    - name: "NVIDIA RTX 3050 6GB"
+      real_time_capable: true
+      max_latency_ms: 50.0
+    - name: "NVIDIA DGX H100"
+      real_time_capable: true
+      max_latency_ms: 15.0
+    - name: "Raspberry Pi Zero 2 W (ARM Cortex-A53 512MB RAM)"
+      real_time_capable: false
+      note: "Constrained deployment experiment only; not guaranteed real-time for expert invocation."
+  api:
+    host: "0.0.0.0"
+    port: 8000
+    history_limit: 500

@@ -1,0 +1,43 @@
+# Dataset Configuration for EcoGate-Audio
+dataset:
+  name: "Multimodal Computer Vision and Acoustic Bird Detection Dataset for Smart Rice Farming Environments"
+  doi: "10.17632/p6m5tmr477.1"
+  url: "https://data.mendeley.com/datasets/p6m5tmr477/1"
+  license: "CC BY 4.0 (verify third-party ESC-50 provenance independently)"
+  version: "1.0.0"
+  modality_policy: "audio_first_strict_unsynchronized_image_exclusion"
+  raw_dir: "data/raw"
+  manifests_dir: "data/manifests"
+  audited_dir: "data/audited"
+  splits_dir: "data/splits"
+  features_dir: "data/features"
+  external_dir: "data/external"
+
+classes:
+  known_species:
+    - "common_waxbill"
+    - "red_billed_quelea"
+    - "village_weaver"
+    - "yellow_fronted_canary"
+  auxiliary_categories:
+    - "other_birds"
+    - "environmental_noise"
+  primary_output_semantics:
+    - "known_species"
+    - "bird_unfamiliar"
+    - "nonbird"
+    - "unresolved"
+
+splitting:
+  seed: 42
+  ratios:
+    train: 0.60
+    val: 0.15
+    calibration: 0.10
+    test: 0.15
+  group_columns:
+    - "duplicate_group_id"
+    - "source_id"
+    - "recording_session_id"
+  enforce_duplicate_containment: true
+  allow_random_clip_split_for_final_eval: false

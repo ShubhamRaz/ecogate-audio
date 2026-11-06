@@ -1,0 +1,56 @@
+{
+  "local_execution_findings": {
+    "total_wav_files_scanned": 8663,
+    "total_image_files_scanned": 0,
+    "annotation_records_inspected": 154,
+    "missing_referenced_audio_paths_detected": 3,
+    "missing_paths_list": [
+      "common_waxbill/missing_field_clip_000.wav",
+      "common_waxbill/missing_field_clip_001.wav",
+      "common_waxbill/missing_field_clip_002.wav"
+    ],
+    "corrupt_wav_files": 1,
+    "valid_wav_files": 8662,
+    "duplicate_waveform_groups": 43,
+    "files_in_duplicate_groups": 88,
+    "esc50_filename_matches": 12,
+    "class_distribution": {
+      "common_waxbill": 781,
+      "environmental_noise": 2026,
+      "other_birds": 2533,
+      "red_billed_quelea": 1274,
+      "village_weaver": 1113,
+      "yellow_fronted_canary": 936
+    },
+    "sample_rate_distribution": {
+      "32000": 4118,
+      "44100": 2036,
+      "48000": 2508
+    },
+    "channel_distribution": {
+      "1": 8662
+    },
+    "duration_summary_sec": {
+      "min": 0.0776,
+      "max": 130.981,
+      "mean": 3.597,
+      "median": 3.0001
+    }
+  },
+  "preliminary_reported_archive_claims": {
+    "wav_files_in_released_archive": 8512,
+    "jpeg_files": 763,
+    "audio_annotation_records": 10723,
+    "missing_referenced_audio_paths": 2211,
+    "cross_split_duplicate_groups": 14,
+    "file_entries_in_duplicate_groups": 29,
+    "image_bounding_boxes": 3875,
+    "image_annotation_classes": [
+      "Bird"
+    ],
+    "noise_filenames_matching_esc50": 2000,
+    "note": "Preliminary audit observations from earlier archive inspection. Treated as historical baselines to verify independently against local raw data."
+  },
+  "synchronization_policy": "Audio-first strictly enforced. Images are never paired with audio clips because no verified temporal synchronization protocol exists in the archive.",
+  "manifest_sha256_checksum": "99d9ba0b9e6a646b52c07239c966027c9ca6471e926db5c5e9386f8445f0a3da"
+}

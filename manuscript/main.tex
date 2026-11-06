@@ -1,0 +1,67 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+\title{\textbf{EcoGate-Audio: Source-Robust, Cost-Aware Selective Inference for Open-Set Bird Sound Monitoring}\\
+\large \textit{(Provisional Research Manuscript Scaffold --- Do Not Claim Superiority Prior to Full-Archive Evaluation)}}
+\author{EcoGate-Audio Research Engineering Team}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Continuous acoustic bird monitoring in agricultural ecosystems faces a fundamental tension between classification accuracy, open-set robustness against unfamiliar vocalizations and environmental noise, and edge computational efficiency. We investigate \textbf{EcoGate-Audio}, a two-tier selective inference framework that pairs an ultra-lightweight spectrogram student network with a selectively invoked multi-scale expert model. Rather than relying solely on student softmax confidence---which frequently triggers costly expert calls on uninformative background noise or corrupted recordings---we study whether an out-of-fold trained estimator of expected decision-loss reduction can improve the accuracy--cost trade-off under duplicate-safe, group-partitioned evaluation. All empirical placeholders for the full 8,512-clip Mendeley archive (\texttt{DOI: 10.17632/p6m5tmr477.1}) are explicitly marked alongside verified local reference pipeline metrics.
+\end{abstract}
+
+\noindent\textbf{Keywords:} Bioacoustics, Selective Classification, Open-Set Recognition, Cost-Aware Routing, Edge AI, Smart Agriculture.
+
+\section{Introduction}
+Avian monitoring in smart rice farming environments requires distinguishing focal pest and beneficial species from unfamiliar bird vocalizations and environmental noise under strict resource budgets \cite{mendeley_smart_rice_birds_2026,kahl2021birdnet}. While high-capacity spectrogram transformers \cite{gong2021ast,koutini2022passt} offer strong discriminative performance, continuous execution on battery-powered edge nodes is computationally costly. This study investigates the central hypothesis that a cost-aware, pre-invocation benefit estimator can improve the trade-off between decision loss, open-set rejection, and inference cost compared with fixed-threshold uncertainty routing.
+
+\section{Related Work}
+We build upon deep bioacoustic classification \cite{kahl2021birdnet}, spectrogram transformers \cite{gong2021ast,koutini2022passt}, environmental sound corpora \cite{piczak2015esc}, selective classification \cite{geifman2017selective}, post-hoc confidence calibration \cite{guo2017calibration}, and energy-based out-of-distribution detection \cite{liu2020energy}.
+
+\section{Dataset and Data Integrity}
+We utilize the \textit{Multimodal Computer Vision and Acoustic Bird Detection Dataset for Smart Rice Farming Environments} \cite{mendeley_smart_rice_birds_2026}. Because visual frames and audio clips lack verified synchronization timestamps, our methodology is strictly \textbf{audio-first}. Our audit pipeline enforces exact SHA-256 and decoded float32 waveform deduplication, logs missing annotation references without silent deletion, and tracks files matching the ESC-50 naming convention \cite{piczak2015esc}.
+
+\section{Problem Formulation}
+Let $x_i$ denote a 3-second mono audio clip at $32\text{ kHz}$. The system outputs one of four semantic labels: \texttt{known\_species} ($\{0,1,2,3\}$), \texttt{bird\_unfamiliar}, \texttt{nonbird}, or \texttt{unresolved}. Given student model $f_s$ and expert model $f_e$, observed expert benefit is defined as:
+\begin{equation}
+d_i = \mathcal{L}(f_s(x_i), y_i) - \mathcal{L}(f_e(x_i), y_i).
+\end{equation}
+We seek a routing policy $\pi(z_i) \in \{0, 1\}$ using only pre-expert features $z_i$ to minimize expected loss subject to budget $B$:
+\begin{equation}
+\min_{\pi} \; \mathbb{E}[\mathcal{L}(\hat{y}_\pi(x), y)] \quad \text{subject to} \quad \mathbb{E}[E_\pi] \le B.
+\end{equation}
+
+\section{Proposed Method}
+The benefit estimator $\hat{\Delta}(z_i) \approx \mathbb{E}[d_i \mid z_i]$ is trained strictly via out-of-fold (OOF) group cross-validation on development data using student confidence, margin, Shannon entropy, prototype distance, bird-activity probability, and signal quality indicators (SNR, clipping ratio, RMS energy). The expert is invoked when $\hat{\Delta}(z_i) > \tau^*(\lambda, B)$, where $\tau^*$ is calibrated on an independent calibration split.
+
+\section{Experimental Setup}
+Data are partitioned via Union-Find group splitting into Train (60\%), Validation (15\%), Calibration (10\%), and Test (15\%). Six open-set methods (\texttt{msp}, \texttt{temperature\_scaled}, \texttt{entropy}, \texttt{margin}, \texttt{prototype\_distance}, \texttt{energy}) and ten routing policies are compared.
+
+\section{Results}
+\textit{Note: Verified metrics from the executed local reference validation pipeline are reported in \texttt{results/*.md}. Full 8,512-clip Mendeley archive metrics and physical hardware power meter measurements remain marked as \texttt{[PENDING\_FULL\_ARCHIVE\_MOUNT]} until the external archive and inline power meter are attached.}
+
+\section{Ablation Studies}
+Ablation experiments evaluate removing the cost penalty ($\lambda=0$), removing the bird-activity pre-gate, and replacing the learned benefit regressor with univariate entropy routing (see \texttt{results/routing\_comparison.md}).
+
+\section{Discussion}
+Results on the validation pipeline indicate that conditioning expert invocation on both student uncertainty and bird-activity probability avoids wasting expert calls on low-confidence environmental noise clips.
+
+\section{Limitations}
+Source-group reconstruction is bounded by available filename and waveform provenance metadata; BirdNET-assisted annotations may carry teacher bias; leave-one-species-out rotations represent downstream open-set tests; and electrical energy in Joules is marked as unmeasured when no physical power meter is connected.
+
+\section{Conclusion}
+EcoGate-Audio provides a leak-free, reproducible software and experimental framework for evaluating cost-aware selective inference in open-set acoustic bird monitoring.
+
+\bibliographystyle{plain}
+\bibliography{references}
+\end{document}

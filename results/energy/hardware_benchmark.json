@@ -1,0 +1,75 @@
+{
+  "student_fp32": {
+    "model_id": "ecogate_student_cnn_v1",
+    "parameters": 13925,
+    "estimated_macs_per_clip": 4191425,
+    "estimated_flops_per_clip": 8382850,
+    "model_storage_kb_fp32": 54.39,
+    "model_storage_kb_int8": 13.6,
+    "batch_size_1_cpu_latency_mean_ms": 1.786,
+    "batch_size_1_cpu_latency_p95_ms": 2.558,
+    "peak_memory_kb": 28.12,
+    "gpu_available": false,
+    "gpu_latency_ms": null,
+    "electrical_energy_status": "not_measured_no_physical_power_meter_attached",
+    "measured_electrical_joules_per_clip": null,
+    "platform": "Windows-10-10.0.26300-SP0",
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+  },
+  "student_int8": {
+    "model_id": "ecogate_student_cnn_v1_int8",
+    "parameters": 13765,
+    "estimated_macs_per_clip": 4143265,
+    "estimated_flops_per_clip": 8286530,
+    "model_storage_kb_fp32": 53.77,
+    "model_storage_kb_int8": 13.44,
+    "batch_size_1_cpu_latency_mean_ms": 1.617,
+    "batch_size_1_cpu_latency_p95_ms": 1.96,
+    "peak_memory_kb": 75.34,
+    "gpu_available": false,
+    "gpu_latency_ms": null,
+    "electrical_energy_status": "not_measured_no_physical_power_meter_attached",
+    "measured_electrical_joules_per_clip": null,
+    "platform": "Windows-10-10.0.26300-SP0",
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+  },
+  "expert_fp32": {
+    "model_id": "ecogate_expert_multiscale_ast_v1",
+    "parameters": 82821,
+    "estimated_macs_per_clip": 24929121,
+    "estimated_flops_per_clip": 49858242,
+    "model_storage_kb_fp32": 323.52,
+    "model_storage_kb_int8": 80.88,
+    "batch_size_1_cpu_latency_mean_ms": 5.021,
+    "batch_size_1_cpu_latency_p95_ms": 7.638,
+    "peak_memory_kb": 3986.58,
+    "gpu_available": false,
+    "gpu_latency_ms": null,
+    "electrical_energy_status": "not_measured_no_physical_power_meter_attached",
+    "measured_electrical_joules_per_clip": null,
+    "platform": "Windows-10-10.0.26300-SP0",
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+  },
+  "quantization_recalibration": {
+    "temperature": 1.5381,
+    "ece_before": 0.0658,
+    "ece_after": 0.0333,
+    "brier_before": 0.3224,
+    "brier_after": 0.3189
+  },
+  "export_info": {
+    "artifact_path": "C:\\Users\\SHUBHAM RAJ\\Desktop\\Others\\ecogate-audio\\ecogate-audio\\checkpoints\\student_int8_edge.npz",
+    "size_bytes": 15469,
+    "onnx_runtime_available": false,
+    "export_note": "Exported portable INT8 NPZ deployment artifact. ONNX export interface is implemented and automatically falls back to portable INT8 NPZ when torch/onnx packages are absent."
+  },
+  "energy_per_correct_routed": {
+    "numerator_total_compute_cost_units": 2741.15,
+    "numerator_measured_electrical_joules": null,
+    "electrical_measurement_status": "not_measured_proxy_cost_units_only",
+    "denominator_correct_predictions": 517,
+    "total_evaluated_predictions": 615,
+    "compute_cost_units_per_correct_prediction": 5.302,
+    "measured_joules_per_correct_prediction": null
+  }
+}

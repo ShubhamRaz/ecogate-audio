@@ -1,0 +1,13 @@
+{
+  "valid_audio_files": 8662,
+  "corrupt_audio_files": 1,
+  "snr_db_summary": {
+    "mean": 19.486,
+    "std": 17.804,
+    "p10": 5.167,
+    "p90": 29.966
+  },
+  "rms_energy_mean": 0.1228,
+  "max_clipping_ratio": 0.22609,
+  "duration_mean_sec": 3.597
+}

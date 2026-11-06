@@ -1,0 +1,1 @@
+"""EcoGate-Audio package module."""

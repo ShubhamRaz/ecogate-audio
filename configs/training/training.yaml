@@ -1,0 +1,49 @@
+# Training & Open-Set Configuration
+training:
+  seed: 42
+  epochs_student: 15
+  epochs_expert: 15
+  oof_folds: 4
+  learning_rate_student: 0.003
+  learning_rate_expert: 0.0015
+  weight_decay: 0.0001
+  early_stopping_patience: 5
+  lr_scheduler: "cosine_annealing"
+  class_weighting: "balanced"
+  mixed_precision: true
+  checkpoint_dir: "checkpoints"
+
+hardware_profiles:
+  rtx_3050_6gb:
+    batch_size_student: 32
+    batch_size_expert: 16
+    num_workers: 2
+  dgx_h100:
+    batch_size_student: 128
+    batch_size_expert: 64
+    num_workers: 8
+  cpu_default:
+    batch_size_student: 16
+    batch_size_expert: 8
+    num_workers: 0
+  rpi_zero_2w:
+    batch_size_student: 1
+    batch_size_expert: 1
+    num_workers: 0
+
+open_set:
+  methods:
+    - "msp"
+    - "temperature_scaled"
+    - "entropy"
+    - "margin"
+    - "prototype_distance"
+    - "energy"
+  default_temperature: 1.5
+  energy_temperature: 1.0
+  target_known_coverage: 0.85
+  held_out_species_rotations:
+    - "common_waxbill"
+    - "red_billed_quelea"
+    - "village_weaver"
+    - "yellow_fronted_canary"

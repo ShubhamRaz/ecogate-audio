@@ -1,0 +1,10 @@
+# Related Work (`docs/research/related_work.md`)
+
+## 1. Automated Bioacoustic & Avian Monitoring
+Deep convolutional and transformer models have transformed avian bioacoustics. **BirdNET** ([Kahl et al., 2021, DOI: 10.1016/j.ecoinf.2021.101236](https://colab.ws/articles/10.1016%2Fj.ecoinf.2021.101236)) demonstrated large-scale avian species identification using wide residual spectrogram networks. Subsequent audio transformers such as **AST** ([Gong et al., 2021, DOI: 10.21437/Interspeech.2021-698](https://www.isca-archive.org/interspeech_2021/gong21b_interspeech.html)) and **PaSST** ([Koutini et al., 2022](https://arxiv.org/abs/2110.05069)) improved spectrogram representation learning using patchout and self-attention, at the cost of higher memory and compute requirements.
+
+## 2. Agricultural Bird Detection & Environmental Sound Datasets
+The [Multimodal Computer Vision and Acoustic Bird Detection Dataset for Smart Rice Farming Environments](https://data.mendeley.com/datasets/p6m5tmr477) (`DOI: 10.17632/p6m5tmr477.1`) provides BirdNET-assisted field recordings across four focal pest/beneficial bird species alongside `other_birds` and `environmental_noise`. Environmental sound benchmarks such as **ESC-50** ([Piczak, 2015, DOI: 10.1145/2733373.2806390](https://github.com/karolpiczak/esc-50)) are frequently incorporated into acoustic background corpora, necessitating careful provenance tracking and license verification.
+
+## 3. Selective Classification, Calibration, and Out-of-Distribution Detection
+Selective classification with a reject option ([Geifman & El-Yaniv, 2017](https://papers.nips.cc/paper/7073-selective-classification-for-deep-neural-networks)) trades coverage for lower risk. Reliable uncertainty routing requires calibrated probabilities, typically achieved via post-hoc temperature scaling ([Guo et al., 2017](https://proceedings.mlr.press/v70/guo17a.html)), alongside open-set / OOD scoring such as energy-based scores ([Liu et al., 2020](https://proceedings.neurips.cc/paper/2020/hash/f5496252609c43eb8a3d147ab9b9c006-Abstract.html)).

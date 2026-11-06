@@ -1,0 +1,33 @@
+# Audio Preprocessing & Feature Extraction Configuration
+audio:
+  channels: 1
+  target_sample_rate: 32000
+  window_duration_sec: 3.0
+  normalization_policy: "peak_or_rms_documented"
+  normalization_mode: "rms_target_db"
+  target_rms_db: -20.0
+  clipping_threshold: 0.999
+  silence_rms_floor: 0.0005
+  min_snr_db: -5.0
+
+features:
+  representation: "log_mel"
+  n_fft: 1024
+  hop_length: 320
+  win_length: 1024
+  n_mels: 64
+  n_mfcc: 20
+  fmin: 50.0
+  fmax: 14000.0
+  log_offset: 1.0e-6
+  feature_normalization: "train_derived_standard_scaler"
+
+augmentation:
+  enabled_in_train_only: true
+  seed: 42
+  time_mask_max_frames: 24
+  freq_mask_max_bins: 8
+  gain_db_range: [-6.0, 6.0]
+  background_noise_snr_db_range: [5.0, 20.0]
+  time_shift_max_fraction: 0.15
+  spec_augment_num_masks: 2

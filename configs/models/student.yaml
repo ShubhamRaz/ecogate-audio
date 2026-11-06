@@ -1,0 +1,20 @@
+# Lightweight Student Model Configuration
+model:
+  model_id: "ecogate_student_cnn_v1"
+  architecture: "CompactResidualMelCNN"
+  input_mels: 64
+  base_channels: 16
+  channel_multipliers: [1, 2, 4]
+  num_known_species: 4
+  embedding_dim: 64
+  activation: "silu"
+  dropout: 0.15
+  use_residual: true
+  seed: 42
+
+baseline_mfcc:
+  model_id: "ecogate_mfcc_logreg_v1"
+  n_mfcc: 20
+  include_deltas: true
+  regularization_c: 1.0
+  max_iter: 300

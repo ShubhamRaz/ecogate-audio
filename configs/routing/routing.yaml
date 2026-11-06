@@ -1,0 +1,37 @@
+# Cost-Aware Expert Routing & Mathematical Optimization Configuration
+routing:
+  seed: 42
+  loss_type: "selective_cross_entropy_and_zero_one"
+  lambda_cost_tradeoff: 0.15
+  estimated_student_cost_units: 1.0
+  estimated_expert_cost_units: 4.5
+  router_overhead_cost_units: 0.05
+
+  pre_expert_features:
+    - "student_max_prob"
+    - "student_margin"
+    - "student_entropy"
+    - "prototype_distance"
+    - "bird_activity_prob"
+    - "audio_snr_db"
+    - "clipping_ratio"
+    - "rms_energy"
+    - "remaining_budget_ratio"
+
+  thresholds:
+    bird_activity_min: 0.35
+    unknown_bird_reject_threshold: 0.65
+    audio_quality_min_snr_db: -3.0
+    max_clipping_ratio: 0.08
+
+  optimization_constraints:
+    max_expert_call_rate: 0.35
+    max_average_energy_units: 2.60
+    min_bird_recall: 0.80
+    min_known_coverage: 0.70
+    max_false_known_on_unknown: 0.20
+
+  sensitivity_grid:
+    lambda_values: [0.0, 0.05, 0.10, 0.15, 0.25, 0.40, 0.60]
+    coverage_levels: [0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
+    budget_call_rates: [0.10, 0.20, 0.30, 0.40, 0.50]
