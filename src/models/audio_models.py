@@ -314,17 +314,19 @@ class LightweightStudentCNN:
 
     def param_count(self) -> int:
         return int(
-            self.conv_freq_kernels.size
-            + self.conv_time_kernels.size
-            + self.W_proj.size
-            + self.b_proj.size
-            + self.W_res.size
-            + self.b_res.size
-            + self.W_cls.size
-            + self.b_cls.size
-            + self.W_bird.size
-            + 1
+            self.W_proj.size + self.b_proj.size
+            + self.W_res.size + self.b_res.size
+            + self.W_cls.size + self.b_cls.size
+            + self.W_bird.size + 1
         )
+
+    def storage_bytes(self) -> int:
+        """Return actual bytes occupied by model arrays and scalar bird bias."""
+        arrays = (
+            self.W_proj, self.b_proj, self.W_res, self.b_res,
+            self.W_cls, self.b_cls, self.W_bird, self.bn_mean, self.bn_std,
+        )
+        return int(sum(array.nbytes for array in arrays) + np.dtype(np.float64).itemsize)
 
     def save_checkpoint(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -533,18 +535,20 @@ class StrongExpertAudioModel:
 
     def param_count(self) -> int:
         return int(
-            self.W_attn_q.size
-            + self.W_attn_k.size
-            + self.W_attn_v.size
-            + self.W_proj1.size
-            + self.b_proj1.size
-            + self.W_proj2.size
-            + self.b_proj2.size
-            + self.W_cls.size
-            + self.b_cls.size
-            + self.W_bird.size
-            + 1
+            self.W_attn_q.size + self.W_attn_k.size + self.W_attn_v.size
+            + self.W_proj1.size + self.b_proj1.size
+            + self.W_proj2.size + self.b_proj2.size
+            + self.W_cls.size + self.b_cls.size + self.W_bird.size + 1
         )
+
+    def storage_bytes(self) -> int:
+        """Return actual bytes occupied by expert arrays and scalar bird bias."""
+        arrays = (
+            self.W_attn_q, self.W_attn_k, self.W_attn_v,
+            self.W_proj1, self.b_proj1, self.W_proj2, self.b_proj2,
+            self.W_cls, self.b_cls, self.W_bird, self.bn_mean, self.bn_std,
+        )
+        return int(sum(array.nbytes for array in arrays) + np.dtype(np.float64).itemsize)
 
     def save_checkpoint(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
