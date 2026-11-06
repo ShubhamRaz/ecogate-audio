@@ -56,7 +56,12 @@ class QuantizedStudentEdgeModel:
         """Actual stored ndarray bytes, including float32 biases and normalizers."""
         arrays = (self.W_proj_q, self.W_res_q, self.W_cls_q, self.W_bird_q,
                   self.b_proj, self.b_res, self.b_cls, self.bn_mean, self.bn_std)
-        return int(sum(array.nbytes for array in arrays) + np.dtype(np.float32).itemsize)
+        scalar_arrays = np.asarray(
+            [self.s_proj, self.s_res, self.s_cls, self.s_bird,
+             self.b_bird, self.recalibrated_temperature],
+            dtype=np.float32,
+        )
+        return int(sum(array.nbytes for array in arrays) + scalar_arrays.nbytes)
 
     def recalibrate(self, cal_mels: np.ndarray, cal_y_known: np.ndarray) -> Dict[str, float]:
         out = self.predict(cal_mels, temperature=1.0)
