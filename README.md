@@ -31,7 +31,7 @@ A research prototype for audio-only bird-sound classification, open-set rejectio
 ```bash
 python -m venv .venv
 # Windows:
-.venv\\Scripts\\activate
+.venv\Scripts\activate
 # Linux/macOS:
 source .venv/bin/activate
 
