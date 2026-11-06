@@ -175,6 +175,11 @@ class CostAwareRouter:
         est_benefits = self.benefit_estimator.predict_benefit(Z)
 
         if invoke_mask is None:
+            if expert_probs is not None:
+                raise ValueError(
+                    "Plan calls before expert inference: call plan_expert_invocations(), "
+                    "run the expert only on selected samples, then pass invoke_mask explicitly."
+                )
             invoke_mask = self.plan_expert_invocations(
                 student_probs=student_probs,
                 student_bird_prob=student_bird_prob,
