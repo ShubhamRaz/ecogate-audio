@@ -240,6 +240,47 @@ class TestEcoGateAudioSuite(unittest.TestCase):
         )
 
 
+    def test_09_pre_expert_planner_enforces_cumulative_budget(self) -> None:
+        """Test that invocation planning uses only student features and enforces a rolling cap."""
+        n = 10
+        rng = np.random.RandomState(123)
+        student_probs = np.full((n, 4), 0.25, dtype=np.float64)
+        bird = np.full(n, 0.95)
+        entropy = np.full(n, 0.95)
+        margin = np.full(n, 0.05)
+        proto = rng.uniform(0.1, 0.3, size=n)
+        snr = np.full(n, 8.0)
+        clipping = np.zeros(n)
+        rms = np.full(n, 0.1)
+
+        Z = build_pre_expert_feature_matrix(
+            np.max(student_probs, axis=1), margin, entropy, proto,
+            bird, snr, clipping, rms,
+        )
+        estimator = BenefitEstimator()
+        estimator.fit_oof(Z, np.ones(n, dtype=np.float32))
+
+        controller = BudgetController(BudgetPolicyConfig(
+            max_expert_call_rate=0.20,
+            max_average_energy_units=10.0,
+            student_cost_units=1.0,
+            expert_cost_units=1.0,
+            router_overhead_units=0.0,
+        ))
+        controller.calibrated_threshold = 0.5
+        router = CostAwareRouter(estimator, controller, bird_activity_threshold=0.5)
+        first_mask = router.plan_expert_invocations(
+            student_probs, bird, entropy, margin, proto, snr, clipping, rms
+        )
+        self.assertLessEqual(int(np.sum(first_mask)), 2)
+        controller.record_batch(first_mask)
+
+        second_mask = router.plan_expert_invocations(
+            student_probs, bird, entropy, margin, proto, snr, clipping, rms
+        )
+        # At 20% cumulative budget over 20 clips, only two further calls are available.
+        self.assertLessEqual(int(np.sum(second_mask)), 2)
+
     def test_08_tie_aware_open_set_and_risk_coverage_metrics(self) -> None:
         """Test tied-score ROC/AP behavior and actual retained-set coverage."""
         tied = compute_binary_auroc_aupr_fpr95(
