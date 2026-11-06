@@ -293,18 +293,19 @@ def write_summary_markdown_reports(
 
 ## 1. Model Complexity & Measured CPU Latency (`{s_b['platform']}`)
 
-| Model Variant | Parameters | Est. MACs / Clip | Est. FLOPs / Clip | Storage (FP32 / INT8) | Batch-1 CPU Latency (Mean / P95) | Peak Memory | Electrical Energy Status |
+| Model Variant | Parameters | MACs / FLOPs | Actual Stored Arrays | Runtime Compute Dtype | Batch-1 CPU Latency (Mean / P95) | Peak Memory | Electrical Energy Status |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| Student CNN (FP32) | {s_b['parameters']} | {s_b['estimated_macs_per_clip']} | {s_b['estimated_flops_per_clip']} | {s_b['model_storage_kb_fp32']} KB | {s_b['batch_size_1_cpu_latency_mean_ms']} ms / {s_b['batch_size_1_cpu_latency_p95_ms']} ms | {s_b['peak_memory_kb']} KB | `{s_b['electrical_energy_status']}` |
-| Student CNN (INT8) | {q_b['parameters']} | {q_b['estimated_macs_per_clip']} | {q_b['estimated_flops_per_clip']} | {q_b['model_storage_kb_int8']} KB | {q_b['batch_size_1_cpu_latency_mean_ms']} ms / {q_b['batch_size_1_cpu_latency_p95_ms']} ms | {q_b['peak_memory_kb']} KB | `{q_b['electrical_energy_status']}` |
-| Strong Expert (FP32) | {e_b['parameters']} | {e_b['estimated_macs_per_clip']} | {e_b['estimated_flops_per_clip']} | {e_b['model_storage_kb_fp32']} KB | {e_b['batch_size_1_cpu_latency_mean_ms']} ms / {e_b['batch_size_1_cpu_latency_p95_ms']} ms | {e_b['peak_memory_kb']} KB | `{e_b['electrical_energy_status']}` |
+| Student fixed-feature model | {s_b['parameters']} | n/a | {s_b['actual_stored_array_kb']} KB | {s_b['runtime_compute_dtype']} | {s_b['batch_size_1_cpu_latency_mean_ms']} ms / {s_b['batch_size_1_cpu_latency_p95_ms']} ms | {s_b['peak_memory_kb']} KB | `{s_b['electrical_energy_status']}` |
+| Student compressed-weight artifact | {q_b['parameters']} | n/a | {q_b['actual_stored_array_kb']} KB | {q_b['runtime_compute_dtype']} | {q_b['batch_size_1_cpu_latency_mean_ms']} ms / {q_b['batch_size_1_cpu_latency_p95_ms']} ms | {q_b['peak_memory_kb']} KB | `{q_b['electrical_energy_status']}` |
+| Expert fixed-feature model | {e_b['parameters']} | n/a | {e_b['actual_stored_array_kb']} KB | {e_b['runtime_compute_dtype']} | {e_b['batch_size_1_cpu_latency_mean_ms']} ms / {e_b['batch_size_1_cpu_latency_p95_ms']} ms | {e_b['peak_memory_kb']} KB | `{e_b['electrical_energy_status']}` |
 
 ## 2. Energy / Compute Cost per Correct Prediction (Proposed Cost-Aware Policy)
 - **Numerator (Total Compute Cost Units)**: `{epc['numerator_total_compute_cost_units']}`
 - **Numerator (Measured Electrical Joules)**: `{epc['numerator_measured_electrical_joules']}` (`{epc['electrical_measurement_status']}`)
 - **Denominator (Number of Correct Predictions)**: `{epc['denominator_correct_predictions']}` out of `{epc['total_evaluated_predictions']}` evaluated test clips
 - **Compute Cost Units per Correct Prediction**: `{epc['compute_cost_units_per_correct_prediction']}`
-- **Raspberry Pi Zero 2 W Assessment**: Constrained 512 MB RAM / Cortex-A53 target is suitable for the INT8 Student + Quality Gate (`{q_b['model_storage_kb_int8']} KB` weights), whereas continuous on-device invocation of the full transformer/attention expert is not guaranteed real-time without offloading or selective gating.
+- **Integer inference status**: `{q_b.get('runtime_compute_dtype', 'float32')}` runtime compute; the NPZ artifact uses compressed weights but dequantizes them before matrix multiplications. No Pi Zero 2 W benchmark or physical energy measurement is claimed.
+- **Complexity accounting**: MAC/FLOP counts are unavailable until exact operator-level accounting is added; parameter count is not used as a MAC proxy.
 """,
         encoding="utf-8",
     )
@@ -315,14 +316,14 @@ def write_summary_markdown_reports(
 
 ## 1. Summary of Executed Verification Experiments (Experiments 1–11)
 1. **Experiment 1 (Dataset Audit & Split Contamination)**: Verified SHA-256 and decoded float32 waveform duplicate grouping, ESC-50 filename matching, corrupt WAV exclusion, missing-path detection, and zero cross-split group leakage (`passed = {split_integrity['passed']}`).
-2. **Experiment 2 (Audio-Only Baselines)**: Evaluated `MFCCBaselineModel` (Macro-F1 = `{m_mfcc['macro_f1']:.4f}`) vs. `LightweightStudentCNN` (Macro-F1 = `{m_stud['macro_f1']:.4f}`).
-3. **Experiment 3 (Student vs. Expert Performance)**: Verified `StrongExpertAudioModel` uplift (Macro-F1 = `{m_exp['macro_f1']:.4f}`, uplift = `+{m_exp['macro_f1'] - m_stud['macro_f1']:.4f}`).
+2. **Experiment 2 (Audio-Only Baselines)**: Evaluated the MFCC baseline against the fixed-feature student compatibility model (not a CNN).
+3. **Experiment 3 (Feature Model Comparison)**: Compared the fixed-feature student and expert compatibility implementations; neither is a trained deep neural backbone.
 4. **Experiment 4 (Open-Set Recognition)**: Evaluated all 6 open-set scoring methods (`msp`, `temperature_scaled`, `entropy`, `margin`, `prototype_distance`, `energy`) and 4 leave-one-species-out rotations.
-5. **Experiment 5 & 6 (Routing Baselines vs. Proposed Cost-Aware Routing)**: Compared all 10 routing policies using out-of-fold trained `BenefitEstimator` and calibration-split threshold selection. Proposed cost-aware routing achieved Expected Decision Loss = `{routing_comparison['proposed_cost_aware_routing']['expected_decision_loss']:.4f}` at expert call rate = `{routing_comparison['proposed_cost_aware_routing']['expert_call_rate']:.4f}`.
+5. **Experiment 5 & 6 (Routing Baselines vs. Budgeted Benefit Routing)**: Compared routing policies using out-of-fold benefit estimates and calibration-only thresholds, subject to configured call-rate and energy caps. The reported result is an empirical output, not evidence of per-sample variable-cost optimization.
 6. **Experiment 7 (Source-Shift & Group Bootstrap Robustness)**: Computed group-level bootstrap 95% confidence intervals preserving session/duplicate clusters.
-7. **Experiment 8 (Quantization & Edge Deployment)**: Exported INT8 student artifact (`{q_b['model_storage_kb_int8']} KB`) and recalibrated post-quantization temperature.
+7. **Experiment 8 (Compressed Weight Storage)**: Exported an NPZ with INT8 weight arrays and recalibrated probabilities; inference dequantizes to float32, so this is not integer compute.
 8. **Experiment 9 & 10 (Risk-Coverage-Energy Trade-off & Ablations)**: Generated risk-coverage curves, matched budget sweeps (10%–50% call rates), and feature-group ablations.
-9. **Experiment 11 (External Unknown-Species & Provenance Scope)**: Documented full-archive Mendeley (`10.17632/p6m5tmr477.1`) and ESC-50 (`10.1145/2733373.2806390`) evaluation boundaries; all numbers in these reports come strictly from executed runs on the local reference validation dataset, with zero fabricated full-archive claims.
+9. **Experiment 11 (Dataset Scope)**: Records the dataset source type in the audit output. Synthetic fixtures are blocked from the complete research pipeline; unverified source metadata must not be described as source-independent generalization.
 """,
         encoding="utf-8",
     )
