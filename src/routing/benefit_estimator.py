@@ -126,14 +126,24 @@ class BenefitEstimator:
         """Fit benefit estimator on out-of-fold pre-expert feature matrix Z_oof and observed benefit d_oof."""
         if self.is_frozen:
             raise RuntimeError("BenefitEstimator is frozen for testing and cannot be refitted.")
+        Z_oof = np.asarray(Z_oof, dtype=np.float64)
+        d_oof = np.asarray(d_oof, dtype=np.float64).reshape(-1)
+        if Z_oof.ndim != 2 or Z_oof.shape[0] != d_oof.size or d_oof.size == 0:
+            raise ValueError("Z_oof must be a non-empty 2-D matrix aligned with d_oof.")
+        if not np.all(np.isfinite(Z_oof)) or not np.all(np.isfinite(d_oof)):
+            raise ValueError("OOF features and observed benefits must be finite.")
+        if self.ridge_alpha < 0:
+            raise ValueError("ridge_alpha must be non-negative.")
         self.z_mean = np.mean(Z_oof, axis=0)
         self.z_std = np.std(Z_oof, axis=0) + 1e-6
         Zn = (Z_oof - self.z_mean) / self.z_std
 
         n, d = Zn.shape
-        A = Zn.T @ Zn + self.ridge_alpha * np.eye(d, dtype=np.float32)
-        self.weights = np.linalg.solve(A, Zn.T @ d_oof).astype(np.float32)
+        A = Zn.T @ Zn + self.ridge_alpha * np.eye(d, dtype=np.float64)
+        # Fit an explicit intercept: solve against centered targets and add their mean once.
         self.bias = float(np.mean(d_oof))
+        centered_targets = d_oof - self.bias
+        self.weights = np.linalg.solve(A, Zn.T @ centered_targets).astype(np.float32)
 
         preds = self.predict_benefit(Z_oof)
         mse = float(np.mean((preds - d_oof) ** 2))
