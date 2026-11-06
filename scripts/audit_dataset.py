@@ -5,6 +5,7 @@ Scans `data/raw` (generating the deterministic reference validation dataset if `
 so the audit pipeline is immediately runnable), checks `annotations.csv`, computes SHA-256 and
 decoded waveform hashes, and saves `data/audited/audit_summary.json` and `results/dataset_audit_report.md`.
 """
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -18,10 +19,21 @@ from src.datasets.bird_dataset import generate_reference_validation_archive
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Audit the local EcoGate-Audio WAV archive.")
+    parser.add_argument(
+        "--allow-synthetic-fixture", action="store_true",
+        help="Explicitly generate/use the synthetic reference fixture when no WAV archive is present. Never use this mode for research metrics.",
+    )
+    args = parser.parse_args()
     raw_dir = PROJECT_ROOT / "data" / "raw"
     ann_csv = PROJECT_ROOT / "data" / "manifests" / "annotations_reference.csv"
     if not discover_files_recursive(raw_dir, (".wav",)):
-        print("[audit_dataset] Local Mendeley 8,512-WAV archive not mounted; generating deterministic reference validation archive in data/raw/...")
+        if not args.allow_synthetic_fixture:
+            raise SystemExit(
+                "[audit_dataset] No WAV files found. Mount the real dataset under data/raw/; "
+                "use --allow-synthetic-fixture only for pipeline smoke tests."
+            )
+        print("[audit_dataset] Generating an explicitly marked SYNTHETIC reference fixture; this is not research data.")
         generate_reference_validation_archive(raw_dir, ann_csv, n_per_class=24, seed=42)
 
     records, summary = build_and_audit_manifest(raw_dir, ann_csv)
