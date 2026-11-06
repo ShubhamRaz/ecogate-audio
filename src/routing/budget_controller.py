@@ -33,6 +33,13 @@ class BudgetController:
     def __init__(self, cfg: Optional[BudgetPolicyConfig] = None) -> None:
         self.cfg = cfg or BudgetPolicyConfig()
         self.calibrated_threshold = float("inf")
+        energy_rate = (
+            self.cfg.max_average_energy_units - self.cfg.student_cost_units - self.cfg.router_overhead_units
+        ) / max(self.cfg.expert_cost_units, 1e-12)
+        self.calibrated_max_call_rate = min(
+            max(0.0, float(self.cfg.max_expert_call_rate)),
+            max(0.0, float(energy_rate)),
+        )
         self.total_queries = 0
         self.expert_calls = 0
 
@@ -43,7 +50,7 @@ class BudgetController:
     def remaining_budget_ratio(self) -> float:
         if self.total_queries == 0:
             return 1.0
-        cap = float(self.cfg.max_expert_call_rate)
+        cap = float(self.calibrated_max_call_rate)
         if cap <= 0:
             return 0.0
         return float(np.clip(1.0 - (self.expert_calls / self.total_queries) / cap, 0.0, 1.0))
@@ -113,6 +120,7 @@ class BudgetController:
         )
         objective = achieved_loss + lambda_cost * cfg.expert_cost_units * actual_rate
         self.calibrated_threshold = tau
+        self.calibrated_max_call_rate = float(feasible_rate)
         return {
             "calibrated_threshold": float(tau),
             "cost_floor": round(cost_floor, 6),
