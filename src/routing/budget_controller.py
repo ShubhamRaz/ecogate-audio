@@ -19,6 +19,9 @@ class BudgetPolicyConfig:
     student_cost_units: float = 1.0
     expert_cost_units: float = 4.5
     router_overhead_units: float = 0.05
+    # Retained for configuration compatibility; these quality constraints are
+    # not enforced by threshold optimization because no validation labels are
+    # passed to this method. They require a separate calibration/constraint audit.
     min_bird_recall: float = 0.80
     min_known_coverage: float = 0.70
     max_false_known_on_unknown: float = 0.20
@@ -119,4 +122,6 @@ class BudgetController:
             "calibration_average_energy_units": round(avg_energy, 6),
             "calibration_cost_regularized_objective": round(float(objective), 6),
             "calibration_sample_count": int(benefits.size),
+            "enforced_constraints": ["max_expert_call_rate", "max_average_energy_units", "target_call_rate_as_cap"],
+            "not_enforced_constraints": ["min_bird_recall", "min_known_coverage", "max_false_known_on_unknown"],
         }
