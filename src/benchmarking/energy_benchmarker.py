@@ -43,9 +43,11 @@ def benchmark_model_inference(
     tracemalloc.stop()
 
     params = model.param_count()
-    storage_kb = (params * 4) / 1024.0
-    # Approximate MACs per 3-sec clip spectrogram (64x301)
-    est_macs = int(params * 301)
+    storage_bytes = (
+        int(model.storage_bytes()) if callable(getattr(model, "storage_bytes", None))
+        else int(params * 4)
+    )
+    storage_kb = storage_bytes / 1024.0
 
     mean_lat_ms = float(np.mean(latencies_ms))
     p95_lat_ms = float(np.percentile(latencies_ms, 95))
@@ -60,10 +62,14 @@ def benchmark_model_inference(
     return {
         "model_id": getattr(model, "model_id", "unknown"),
         "parameters": params,
-        "estimated_macs_per_clip": est_macs,
-        "estimated_flops_per_clip": est_macs * 2,
-        "model_storage_kb_fp32": round(storage_kb, 2),
-        "model_storage_kb_int8": round(storage_kb / 4.0, 2),
+        "estimated_macs_per_clip": None,
+        "estimated_flops_per_clip": None,
+        "complexity_estimate_status": "not_available_exact_operator_accounting_required",
+        "actual_stored_array_bytes": storage_bytes,
+        "actual_stored_array_kb": round(storage_kb, 3),
+        "model_storage_kb_fp32_equivalent": round((params * 4) / 1024.0, 3),
+        "model_storage_kb_int8": round(storage_kb, 3) if callable(getattr(model, "storage_bytes", None)) else None,
+        "runtime_compute_dtype": getattr(model, "runtime_compute_dtype", "float32"),
         "batch_size_1_cpu_latency_mean_ms": round(mean_lat_ms, 3),
         "batch_size_1_cpu_latency_p95_ms": round(p95_lat_ms, 3),
         "peak_memory_kb": round(peak_bytes / 1024.0, 2),
