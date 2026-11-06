@@ -1,8 +1,14 @@
-# Proposed Research Contributions (`docs/research/contributions.md`)
+# Proposed Research Contributions
 
-*Note: In accordance with rigorous scientific practice, algorithmic mechanisms are framed as structured engineering and empirical investigations of established cost-sensitive decision principles rather than claims of foundational mathematical novelty.*
+The current repository contains a reproducible engineering prototype. The following are candidate contributions to validate, not claims of demonstrated superiority.
 
-1. **Rigorous Acoustic Data Audit & Group-Safe Evaluation Protocol**: A reproducible auditing toolkit (`src/audit/auditor.py`) that performs exact SHA-256 and decoded float32 waveform hashing, verifies ESC-50 noise provenance ([Piczak, 2015](https://github.com/karolpiczak/esc-50)), logs missing annotation records without silent deletion, and constructs union-find duplicate- and session-grouped splits (`train`, `val`, `calibration`, `test`).
-2. **Four-Way Open-Set Acoustic Semantics**: Explicit separation of predictions into `known_species`, `bird_unfamiliar`, `nonbird`, and `unresolved` via an integrated audio quality gate, bird-activity detector, and six configurable open-set scorers ([Liu et al., 2020](https://proceedings.neurips.cc/paper/2020/hash/f5496252609c43eb8a3d147ab9b9c006-Abstract.html)).
-3. **Out-of-Fold Cost-Aware Expert Benefit Routing**: Implementation and empirical comparison of an out-of-fold trained benefit estimator $\hat{\Delta}(z)$ that predicts when invoking a stronger multi-scale expert model reduces composite decision loss by more than $\lambda \cdot C_{\text{expert}}$, evaluated against nine baseline policies at matched budgets.
-4. **End-to-End Reproducible Software & Edge Benchmarking**: Complete INT8 student quantization with post-quantization temperature recalibration, honest compute vs. physical power reporting, FastAPI service, and React monitoring dashboard.
+1. **Audio data audit and provenance-aware partitions:** SHA-256 and decoded waveform hashing, corrupt/missing-path logging, and duplicate/session-connected components for train, validation, calibration, and test partitions. Unverified source metadata must remain labelled unknown.
+2. **Four-way acoustic decision interface:** explicit output states for `known_species`, `bird_unfamiliar`, `nonbird`, and `unresolved`, combining a quality gate, bird-activity score, and open-set novelty scores.
+3. **Out-of-fold expert-benefit prediction:** a ridge benefit estimator trained on group-held-out predictions, evaluated against confidence, entropy, margin, prototype, and random routing baselines. The current inference cost is constant per expert call; the correct claim is budgeted benefit routing, not per-sample variable-cost optimization.
+4. **Reproducible evaluation and service tooling:** calibration-split thresholding, group-aware bootstrap, selective-risk evaluation, FastAPI inference interface, and a React monitoring dashboard.
+
+## What is not yet a contribution
+
+- The current student compatibility class is not a CNN; the expert compatibility class is not a trained AST/transformer. They use handcrafted feature extraction, frozen/random transformations, and fitted output heads.
+- The current INT8 path stores quantized weights but converts them back to float32 for inference. It does not demonstrate integer compute acceleration.
+- The committed numerical reports are historical and marked non-publication-ready until the corrected pipeline has been rerun on the verified archive.
