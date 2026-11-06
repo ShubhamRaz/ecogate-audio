@@ -8,8 +8,8 @@
 \usepackage{geometry}
 \geometry{margin=1in}
 
-\title{\textbf{EcoGate-Audio: Source-Robust, Cost-Aware Selective Inference for Open-Set Bird Sound Monitoring}\\
-\large \textit{(Provisional Research Manuscript Scaffold --- Do Not Claim Superiority Prior to Full-Archive Evaluation)}}
+\title{\textbf{EcoGate-Audio: Budgeted Selective Inference for Open-Set Bird-Sound Monitoring}\\
+\large \textit{(Provisional Research Manuscript --- Experimental Validation Pending)}}
 \author{EcoGate-Audio Research Engineering Team}
 \date{\today}
 
@@ -17,50 +17,56 @@
 \maketitle
 
 \begin{abstract}
-Continuous acoustic bird monitoring in agricultural ecosystems faces a fundamental tension between classification accuracy, open-set robustness against unfamiliar vocalizations and environmental noise, and edge computational efficiency. We investigate \textbf{EcoGate-Audio}, a two-tier selective inference framework that pairs an ultra-lightweight spectrogram student network with a selectively invoked multi-scale expert model. Rather than relying solely on student softmax confidence---which frequently triggers costly expert calls on uninformative background noise or corrupted recordings---we study whether an out-of-fold trained estimator of expected decision-loss reduction can improve the accuracy--cost trade-off under duplicate-safe, group-partitioned evaluation. All empirical placeholders for the full 8,512-clip Mendeley archive (\texttt{DOI: 10.17632/p6m5tmr477.1}) are explicitly marked alongside verified local reference pipeline metrics.
+Continuous acoustic monitoring must classify focal bird species while handling unfamiliar bird vocalizations, environmental sounds, and recordings of inadequate quality. This manuscript describes EcoGate-Audio, an audio-only research prototype that combines handcrafted spectral-feature classifiers, open-set scoring, and an out-of-fold estimator of expected expert benefit. The estimator is calibrated on a dedicated calibration partition and used to select expert calls under explicit call-rate and compute-budget constraints. The current NumPy/SciPy student and expert implementations are fixed-feature models with fitted output heads; they are not a trained convolutional neural network or audio spectrogram transformer. Historical result files have been invalidated pending re-audit of the source archive and rerunning the corrected evaluation pipeline. No claim of source robustness, integer-inference acceleration, or measured electrical-energy savings is made in this version.
 \end{abstract}
 
-\noindent\textbf{Keywords:} Bioacoustics, Selective Classification, Open-Set Recognition, Cost-Aware Routing, Edge AI, Smart Agriculture.
+\noindent\textbf{Keywords:} Bioacoustics, Selective Classification, Open-Set Recognition, Expert Routing, Edge Computing, Smart Agriculture.
 
 \section{Introduction}
-Avian monitoring in smart rice farming environments requires distinguishing focal pest and beneficial species from unfamiliar bird vocalizations and environmental noise under strict resource budgets \cite{mendeley_smart_rice_birds_2026,kahl2021birdnet}. While high-capacity spectrogram transformers \cite{gong2021ast,koutini2022passt} offer strong discriminative performance, continuous execution on battery-powered edge nodes is computationally costly. This study investigates the central hypothesis that a cost-aware, pre-invocation benefit estimator can improve the trade-off between decision loss, open-set rejection, and inference cost compared with fixed-threshold uncertainty routing.
+Acoustic monitoring in agricultural environments requires classification of target species while rejecting unfamiliar bird sounds, environmental noise, and recordings that are not suitable for inference. A two-stage decision system can first process each recording with a compact model and selectively request a stronger model when the expected reduction in decision loss justifies the additional inference cost. This work studies a reproducible software framework for this setting; empirical superiority remains to be established on a verified source archive.
 
 \section{Related Work}
-We build upon deep bioacoustic classification \cite{kahl2021birdnet}, spectrogram transformers \cite{gong2021ast,koutini2022passt}, environmental sound corpora \cite{piczak2015esc}, selective classification \cite{geifman2017selective}, post-hoc confidence calibration \cite{guo2017calibration}, and energy-based out-of-distribution detection \cite{liu2020energy}.
+The study is motivated by deep bioacoustic classification \cite{kahl2021birdnet}, spectrogram transformers \cite{gong2021ast,koutini2022passt}, environmental sound corpora \cite{piczak2015esc}, selective classification \cite{geifman2017selective}, confidence calibration \cite{guo2017calibration}, and energy-based out-of-distribution detection \cite{liu2020energy}. These methods provide context; the present implementation should not be confused with a trained AST or CNN.
 
 \section{Dataset and Data Integrity}
-We utilize the \textit{Multimodal Computer Vision and Acoustic Bird Detection Dataset for Smart Rice Farming Environments} \cite{mendeley_smart_rice_birds_2026}. Because visual frames and audio clips lack verified synchronization timestamps, our methodology is strictly \textbf{audio-first}. Our audit pipeline enforces exact SHA-256 and decoded float32 waveform deduplication, logs missing annotation references without silent deletion, and tracks files matching the ESC-50 naming convention \cite{piczak2015esc}.
+The repository targets the \textit{Multimodal Computer Vision and Acoustic Bird Detection Dataset for Smart Rice Farming Environments} \cite{mendeley_smart_rice_birds_2026}. The pipeline follows an audio-first policy because verified audio--image synchronization metadata is not available to the current implementation. The audit records raw-file SHA-256 hashes, decoded-waveform hashes, corrupt files, annotation paths, and identifiable duplicate/source groups.
+
+A historical audit report records 8,663 WAV files, while a preliminary archive observation records 8,512. The 151-file difference equals the default output size of the synthetic reference-fixture generator. This is a provenance warning, not conclusive proof of dataset mixing: the raw WAV archive is not versioned in the repository, so the source cannot be reconstructed from the committed report alone. The authoritative archive must be mounted in a clean raw-data directory and independently re-audited before any metric is reported.
 
 \section{Problem Formulation}
-Let $x_i$ denote a 3-second mono audio clip at $32\text{ kHz}$. The system outputs one of four semantic labels: \texttt{known\_species} ($\{0,1,2,3\}$), \texttt{bird\_unfamiliar}, \texttt{nonbird}, or \texttt{unresolved}. Given student model $f_s$ and expert model $f_e$, observed expert benefit is defined as:
+For recording $x_i$ with target $y_i$, let $f_s$ be the student feature model and $f_e$ the expert feature model. The observed benefit of invoking the expert is
 \begin{equation}
 d_i = \mathcal{L}(f_s(x_i), y_i) - \mathcal{L}(f_e(x_i), y_i).
 \end{equation}
-We seek a routing policy $\pi(z_i) \in \{0, 1\}$ using only pre-expert features $z_i$ to minimize expected loss subject to budget $B$:
+A pre-expert feature vector $z_i$ contains student uncertainty, prototype distance, bird-activity probability, and audio-quality statistics. An out-of-fold estimator approximates
 \begin{equation}
-\min_{\pi} \; \mathbb{E}[\mathcal{L}(\hat{y}_\pi(x), y)] \quad \text{subject to} \quad \mathbb{E}[E_\pi] \le B.
+\widehat{\Delta}(z_i) \approx \mathbb{E}[d_i \mid z_i].
 \end{equation}
+For a constant incremental expert cost $C_e$, the scalar decision rule is
+\begin{equation}
+\pi(z_i)=\mathbb{1}\{\widehat{\Delta}(z_i)>\lambda C_e\},
+\end{equation}
+subject to a hard maximum expert-call rate and average compute-cost budget. The implementation currently assumes constant cost per expert invocation. Consequently, the cost term changes the decision threshold, not the ranking of samples; it is not a per-sample variable-cost optimizer. A matched-rate comparison can only demonstrate a ranking difference if sample-level costs or additional sample-dependent constraints vary.
 
-\section{Proposed Method}
-The benefit estimator $\hat{\Delta}(z_i) \approx \mathbb{E}[d_i \mid z_i]$ is trained strictly via out-of-fold (OOF) group cross-validation on development data using student confidence, margin, Shannon entropy, prototype distance, bird-activity probability, and signal quality indicators (SNR, clipping ratio, RMS energy). The expert is invoked when $\hat{\Delta}(z_i) > \tau^*(\lambda, B)$, where $\tau^*$ is calibrated on an independent calibration split.
+\section{Current Model Implementations}
+The class name \texttt{LightweightStudentCNN} is retained for software compatibility, but the implementation is not a CNN. It computes pooled spectral statistics and temporal differences, applies frozen random projection/residual matrices, and fits classification and bird-activity heads using L-BFGS. The class named \texttt{StrongExpertAudioModel} is likewise not a trained AST: it computes handcrafted spectral summaries, uses fixed random attention projections, partially initializes an embedding projection with ridge regression, and fits output heads. These are feature-based reference models, not end-to-end trainable neural networks.
 
-\section{Experimental Setup}
-Data are partitioned via Union-Find group splitting into Train (60\%), Validation (15\%), Calibration (10\%), and Test (15\%). Six open-set methods (\texttt{msp}, \texttt{temperature\_scaled}, \texttt{entropy}, \texttt{margin}, \texttt{prototype\_distance}, \texttt{energy}) and ten routing policies are compared.
+\section{Routing and Evaluation Protocol}
+The benefit estimator is trained using group-held-out predictions. Group identifiers connect exact duplicate groups and identifiable source/session groups; samples with unknown source provenance cannot be claimed geographically or temporally independent. Thresholds are selected on a calibration partition, never on the held-out test labels. The threshold controller applies the full cost floor while respecting both configured call-rate and energy-derived caps.
 
-\section{Results}
-\textit{Note: Verified metrics from the executed local reference validation pipeline are reported in \texttt{results/*.md}. Full 8,512-clip Mendeley archive metrics and physical hardware power meter measurements remain marked as \texttt{[PENDING\_FULL\_ARCHIVE\_MOUNT]} until the external archive and inline power meter are attached.}
+Open-set ROC-AUC groups tied scores at a common threshold, and AUPR is reported as non-interpolated average precision. Risk--coverage evaluation uses the actual routed predictions, their confidence, and the corresponding per-sample loss. Group bootstrap intervals resample connected source/duplicate groups.
 
-\section{Ablation Studies}
-Ablation experiments evaluate removing the cost penalty ($\lambda=0$), removing the bird-activity pre-gate, and replacing the learned benefit regressor with univariate entropy routing (see \texttt{results/routing\_comparison.md}).
+\section{Deployment and Resource Accounting}
+The current edge wrapper stores selected weight arrays in INT8 format but dequantizes them to float32 before matrix multiplication. This is compressed weight storage, not integer-only inference. Exact MAC/FLOP counts are not reported until operator-level accounting is implemented. Electrical energy in joules and Raspberry Pi Zero 2 W performance require direct hardware measurement and are not inferred from parameter counts or desktop timings.
 
-\section{Discussion}
-Results on the validation pipeline indicate that conditioning expert invocation on both student uncertainty and bird-activity probability avoids wasting expert calls on low-confidence environmental noise clips.
+\section{Experimental Status}
+The committed Markdown reports contain historical outputs from an earlier implementation. They are marked as stale because dataset provenance, threshold constraints, average-precision computation, risk--coverage inputs, and runtime quantization descriptions have changed. The corrected branch requires a fresh run on the authoritative archive before any numerical results can be included. No full-archive metrics are asserted here.
 
 \section{Limitations}
-Source-group reconstruction is bounded by available filename and waveform provenance metadata; BirdNET-assisted annotations may carry teacher bias; leave-one-species-out rotations represent downstream open-set tests; and electrical energy in Joules is marked as unmeasured when no physical power meter is connected.
+The archive/source discrepancy is unresolved; identifiable source metadata is incomplete; the current student and expert are fixed-feature models rather than trained CNN/AST architectures; the cost model assumes constant expert-call cost; unknown-bird categories may be heterogeneous; physical power has not been measured; and integer-only inference is not implemented.
 
 \section{Conclusion}
-EcoGate-Audio provides a leak-free, reproducible software and experimental framework for evaluating cost-aware selective inference in open-set acoustic bird monitoring.
+EcoGate-Audio currently provides an engineering framework for auditing audio data, evaluating open-set scores, and studying budgeted expert selection. Publication claims must wait until the source archive is re-audited, neural architecture claims are either implemented or removed, and all experiments are rerun under the corrected protocol.
 
 \bibliographystyle{plain}
 \bibliography{references}
