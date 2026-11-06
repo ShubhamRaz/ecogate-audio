@@ -46,6 +46,7 @@ class FeatureSample:
     snr_db: float
     clipping_ratio: float
     rms_energy: float
+    source_type: str = "local_archive_source_unverified"
 
 
 class FeatureNormalizer:
@@ -224,12 +225,18 @@ def load_dataset_from_manifest(
     manifest_csv: Path,
     raw_dir: Path,
     processor: Optional[AudioProcessor] = None,
+    allow_synthetic_fixture: bool = False,
 ) -> List[FeatureSample]:
     """Load all valid records from a manifest CSV and extract their acoustic representations."""
     processor = processor or AudioProcessor()
     samples: List[FeatureSample] = []
     with open(manifest_csv, "r", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
+    source_types = {row.get("source_type", "local_archive_source_unverified") for row in rows}
+    if "synthetic_reference_fixture" in source_types and not allow_synthetic_fixture:
+        raise ValueError("Synthetic reference data are blocked from research loading; pass allow_synthetic_fixture=True only in tests/smoke runs.")
+    if (Path(raw_dir) / ".ecogate_synthetic_reference_fixture").exists() and not allow_synthetic_fixture:
+        raise ValueError("Synthetic fixture marker found in raw_dir; synthetic clips cannot be used for research metrics.")
     total_rows = len(rows)
     for idx, row in enumerate(rows):
         if (idx + 1) % 1000 == 0 or idx + 1 == total_rows:
@@ -265,6 +272,7 @@ def load_dataset_from_manifest(
                 snr_db=snr,
                 clipping_ratio=clip_r,
                 rms_energy=rms,
+                source_type=row.get("source_type", "local_archive_source_unverified"),
             )
         )
     return samples
