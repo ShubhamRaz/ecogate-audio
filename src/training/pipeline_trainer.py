@@ -20,6 +20,11 @@ from src.evaluation.evaluator import (
     group_bootstrap_ci,
 )
 from src.models.audio_models import LightweightStudentCNN, MFCCBaselineModel, StrongExpertAudioModel
+try:
+    from src.models.pytorch_models import StudentCNN, ExpertTransformer
+    _PYTORCH_AVAILABLE = True
+except ImportError:
+    _PYTORCH_AVAILABLE = False
 from src.open_set.open_set_detector import OpenSetDetector
 from src.routing.benefit_estimator import (
     BenefitEstimator,
@@ -101,6 +106,8 @@ def generate_oof_routing_examples(
     train_samples: List[FeatureSample],
     n_folds: int = 4,
     seed: int = 42,
+    model_backend: str = "pytorch",
+    epochs: int = 6,
 ) -> Dict[str, np.ndarray]:
     """
     Split training data by group into `n_folds` folds, train Student and Expert on K-1 folds,
@@ -121,7 +128,7 @@ def generate_oof_routing_examples(
     e_loss_list = []
 
     for fold in range(n_folds):
-        print(f"  [OOF] Training fold {fold + 1}/{n_folds}...", flush=True)
+        print(f"  [OOF] Training fold {fold + 1}/{n_folds} (backend={model_backend})...", flush=True)
         fold_train = [s for s, gid in zip(train_samples, sample_groups) if group_to_fold[gid] != fold]
         fold_val = [s for s, gid in zip(train_samples, sample_groups) if group_to_fold[gid] == fold]
         if not fold_train or not fold_val:
@@ -131,11 +138,18 @@ def generate_oof_routing_examples(
         tr_arr = prepare_arrays(fold_train, norm)
         va_arr = prepare_arrays(fold_val, norm)
 
-        student = LightweightStudentCNN(seed=seed + fold)
-        student.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], epochs=12)
+        if model_backend == "pytorch" and _PYTORCH_AVAILABLE:
+            student = StudentCNN(seed=seed + fold)
+            student.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], epochs=epochs, batch_size=64)
 
-        expert = StrongExpertAudioModel(seed=seed + fold)
-        expert.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], epochs=12)
+            expert = ExpertTransformer(seed=seed + fold, n_layers=2, n_heads=2)
+            expert.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], epochs=epochs, batch_size=32)
+        else:
+            student = LightweightStudentCNN(seed=seed + fold)
+            student.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], epochs=12)
+
+            expert = StrongExpertAudioModel(seed=seed + fold)
+            expert.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], epochs=12)
 
         tr_s_out = student.predict(tr_arr["mels"])
         os_det = OpenSetDetector()

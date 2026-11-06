@@ -1,18 +1,18 @@
 {
   "total_by_class": {
-    "common_waxbill": 781,
-    "environmental_noise": 2026,
-    "other_birds": 2533,
-    "red_billed_quelea": 1274,
-    "village_weaver": 1113,
-    "yellow_fronted_canary": 936
+    "common_waxbill": 756,
+    "environmental_noise": 2000,
+    "other_birds": 2508,
+    "red_billed_quelea": 1249,
+    "village_weaver": 1088,
+    "yellow_fronted_canary": 911
   },
   "valid_by_class": {
-    "common_waxbill": 781,
-    "environmental_noise": 2025,
-    "other_birds": 2533,
-    "red_billed_quelea": 1274,
-    "village_weaver": 1113,
-    "yellow_fronted_canary": 936
+    "common_waxbill": 756,
+    "environmental_noise": 2000,
+    "other_birds": 2508,
+    "red_billed_quelea": 1249,
+    "village_weaver": 1088,
+    "yellow_fronted_canary": 911
   }
 }

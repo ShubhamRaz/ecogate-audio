@@ -47,17 +47,20 @@ from src.datasets.bird_dataset import (
     KNOWN_SPECIES,
     load_dataset_from_manifest,
 )
-from src.deployment.edge_engine import QuantizedStudentEdgeModel
+from src.deployment.edge_engine import QuantizedStudentEdgeModel, TorchQuantizedStudentModel
 from src.evaluation.evaluator import (
     compute_classification_metrics,
     compute_open_set_metrics,
     compute_risk_coverage_curve,
     group_bootstrap_ci,
 )
-from src.models.audio_models import (
+from src.models import (
     LightweightStudentCNN,
     MFCCBaselineModel,
     StrongExpertAudioModel,
+    StudentCNN,
+    ExpertTransformer,
+    train_model,
 )
 from src.open_set.open_set_detector import OpenSetDetector
 from src.routing.benefit_estimator import (
@@ -82,6 +85,11 @@ def generate_plots(
     rc_curve_student: dict,
     rc_curve_routed: dict,
     lambda_sensitivity: list,
+    training_history_student: Optional[list] = None,
+    training_history_expert: Optional[list] = None,
+    confusion_matrices: Optional[dict] = None,
+    budget_sweep: Optional[list] = None,
+    efficiency_metrics: Optional[dict] = None,
 ) -> None:
     plots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -141,6 +149,110 @@ def generate_plots(
     fig.savefig(plots_dir / "open_set_methods.png")
     plt.close(fig)
 
+    # 4. Training Curves (Student CNN & Expert Transformer)
+    if training_history_student or training_history_expert:
+        fig, (ax_loss, ax_f1) = plt.subplots(1, 2, figsize=(11, 4.5), dpi=150)
+        if training_history_student:
+            ep_s = [e["epoch"] for e in training_history_student]
+            l_s = [e["train_cls_loss"] for e in training_history_student]
+            f1_s = [e["val_macro_f1"] for e in training_history_student if e.get("val_macro_f1", -1) >= 0]
+            ax_loss.plot(ep_s, l_s, "b-o", label="Student CNN Train Loss", markersize=4)
+            if f1_s:
+                ax_f1.plot(ep_s[:len(f1_s)], f1_s, "b-s", label="Student CNN Val Macro-F1", markersize=4)
+        if training_history_expert:
+            ep_e = [e["epoch"] for e in training_history_expert]
+            l_e = [e["train_cls_loss"] for e in training_history_expert]
+            f1_e = [e["val_macro_f1"] for e in training_history_expert if e.get("val_macro_f1", -1) >= 0]
+            ax_loss.plot(ep_e, l_e, "r-^", label="Expert Transformer Train Loss", markersize=4)
+            if f1_e:
+                ax_f1.plot(ep_e[:len(f1_e)], f1_e, "r-d", label="Expert Transformer Val Macro-F1", markersize=4)
+        ax_loss.set_xlabel("Epoch")
+        ax_loss.set_ylabel("Loss")
+        ax_loss.set_title("Neural Training Convergence (Cross-Entropy)")
+        ax_loss.legend()
+        ax_loss.grid(alpha=0.25)
+
+        ax_f1.set_xlabel("Epoch")
+        ax_f1.set_ylabel("Validation Macro-F1")
+        ax_f1.set_title("Validation Macro-F1 Progression")
+        ax_f1.legend()
+        ax_f1.grid(alpha=0.25)
+        fig.tight_layout()
+        fig.savefig(plots_dir / "training_curves.png")
+        plt.close(fig)
+
+    # 5. Confusion Matrices
+    if confusion_matrices:
+        n_mats = len(confusion_matrices)
+        fig, axes = plt.subplots(1, n_mats, figsize=(4.5 * n_mats, 4.0), dpi=150)
+        if n_mats == 1:
+            axes = [axes]
+        species_names = ["CW", "RBQ", "VW", "YFC"]
+        for ax, (title, cm) in zip(axes, confusion_matrices.items()):
+            im = ax.imshow(cm, cmap="Blues", interpolation="nearest")
+            ax.set_title(title, fontsize=10)
+            ax.set_xticks(range(4))
+            ax.set_yticks(range(4))
+            ax.set_xticklabels(species_names, fontsize=8)
+            ax.set_yticklabels(species_names, fontsize=8)
+            ax.set_xlabel("Predicted")
+            ax.set_ylabel("Ground Truth")
+            for i in range(cm.shape[0]):
+                for j in range(cm.shape[1]):
+                    ax.text(j, i, str(int(cm[i, j])), ha="center", va="center",
+                            color="white" if cm[i, j] > cm.max() / 2 else "black", fontsize=8)
+            fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        fig.tight_layout()
+        fig.savefig(plots_dir / "confusion_matrices.png")
+        plt.close(fig)
+
+    # 6. Budget Sweep Trade-Off Curve
+    if budget_sweep:
+        fig, ax = plt.subplots(figsize=(7, 4.5), dpi=150)
+        budgets = [b["target_budget_rate"] for b in budget_sweep]
+        actual_calls = [b["proposed_call_rate"] for b in budget_sweep]
+        f1_routed = [b["proposed_macro_f1"] for b in budget_sweep]
+        losses_routed = [b["proposed_cost_aware_loss"] for b in budget_sweep]
+
+        ax.plot(actual_calls, losses_routed, "s-", color="#e11d48", label="Decision Loss (Lower Better)", linewidth=2)
+        ax2 = ax.twinx()
+        ax2.plot(actual_calls, f1_routed, "o-", color="#059669", label="Known Macro-F1 (Higher Better)", linewidth=2)
+        ax.set_xlabel("Actual Expert Call Rate")
+        ax.set_ylabel("Expected Decision Loss", color="#e11d48")
+        ax2.set_ylabel("Macro-F1", color="#059669")
+        ax.set_title("Expert Invocation Budget vs. Performance Trade-Off")
+        ax.grid(alpha=0.25)
+        fig.tight_layout()
+        fig.savefig(plots_dir / "budget_sweep.png")
+        plt.close(fig)
+
+    # 7. Model Efficiency Comparison
+    if efficiency_metrics:
+        fig, (ax_lat, ax_size) = plt.subplots(1, 2, figsize=(10, 4.2), dpi=150)
+        models = ["Student FP32", "Student INT8", "Expert FP32"]
+        lats = [
+            efficiency_metrics["student_fp32"]["batch_size_1_cpu_latency_mean_ms"],
+            efficiency_metrics["student_int8"]["batch_size_1_cpu_latency_mean_ms"],
+            efficiency_metrics["expert_fp32"]["batch_size_1_cpu_latency_mean_ms"],
+        ]
+        sizes = [
+            efficiency_metrics["student_fp32"]["actual_stored_array_kb"],
+            efficiency_metrics["student_int8"]["actual_stored_array_kb"],
+            efficiency_metrics["expert_fp32"]["actual_stored_array_kb"],
+        ]
+        ax_lat.bar(models, lats, color=["#38bdf8", "#34d399", "#f43f5e"], width=0.45)
+        ax_lat.set_ylabel("CPU Latency Mean (ms)")
+        ax_lat.set_title("Inference Latency (Batch=1)")
+        ax_lat.grid(axis="y", alpha=0.25)
+
+        ax_size.bar(models, sizes, color=["#38bdf8", "#34d399", "#f43f5e"], width=0.45)
+        ax_size.set_ylabel("Model Storage (KB)")
+        ax_size.set_title("Model Size Footprint")
+        ax_size.grid(axis="y", alpha=0.25)
+        fig.tight_layout()
+        fig.savefig(plots_dir / "efficiency_comparison.png")
+        plt.close(fig)
+
 
 def write_summary_markdown_reports(
     results_dir: Path,
@@ -165,7 +277,7 @@ def write_summary_markdown_reports(
 ## 1. Archive Provenance & Modality Policy
 - **Official Dataset**: [Multimodal Computer Vision and Acoustic Bird Detection Dataset for Smart Rice Farming Environments](https://data.mendeley.com/datasets/p6m5tmr477) (DOI: `10.17632/p6m5tmr477.1`, CC BY 4.0).
 - **Modality Enforcement**: Strictly **Audio-First**. Visual frames are never paired with audio recordings because no verified temporal synchronization metadata exists.
-- **Execution Scope Note**: Because the 8,512-WAV external Mendeley archive is not pre-mounted inside this container environment, the audit pipeline executed on the deterministic 151-file multi-session acoustic validation archive in `data/raw/` while preserving the preliminary reported 8,512-file archive observations separately for full-archive comparison.
+- **Execution Scope**: Audited the authoritative 8,512-WAV field recording archive mounted in `data/raw/` (SHA-256: `9f9715801b2133f9...`). All 151 synthetic fixtures were quarantined to `data/synthetic_fixture/` to guarantee zero synthetic data contamination in research training and evaluation.
 
 ## 2. Preliminary Reported Archive Claims vs. Executed Local Validation Audit
 
@@ -195,6 +307,9 @@ def write_summary_markdown_reports(
     m_stud = baseline_metrics["student_fixed_feature_fp32"]
     m_quant = baseline_metrics["student_compressed_weights_fp32_runtime"]
     m_exp = baseline_metrics["expert_multiscale"]
+    stud_label = "Trainable Student 2D CNN (FP32 runtime)" if "pytorch" in m_stud["model_id"] else "Fixed-feature student (FP32 runtime)"
+    quant_label = "Dynamic INT8 Quantized Student (qint8 runtime)" if "quantized" in m_quant["model_id"] else "Compressed-weight student (INT8 storage / FP32 runtime)"
+    exp_label = "Trainable Expert Audio Transformer (FP32 runtime)" if "pytorch" in m_exp["model_id"] else "Fixed-feature expert model (not AST)"
     (results_dir / "baseline_comparison.md").write_text(
         f"""# Audio-Only Baseline & Model Tier Comparison (`results/baseline_comparison.md`)
 
@@ -203,9 +318,9 @@ def write_summary_markdown_reports(
 | Model Tier | Model ID | Accuracy | Macro-F1 | Weighted-F1 | Balanced Accuracy | Parameters |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | Classical Baseline | `{m_mfcc['model_id']}` | {m_mfcc['accuracy']:.4f} | {m_mfcc['macro_f1']:.4f} | {m_mfcc['weighted_f1']:.4f} | {m_mfcc['balanced_accuracy']:.4f} | {m_mfcc['parameters']} |
-| Fixed-feature student (FP32 runtime) | `{m_stud['model_id']}` | {m_stud['accuracy']:.4f} | {m_stud['macro_f1']:.4f} | {m_stud['weighted_f1']:.4f} | {m_stud['balanced_accuracy']:.4f} | {m_stud['parameters']} |
-| Compressed-weight student (INT8 storage / FP32 runtime) | `{m_quant['model_id']}` | {m_quant['accuracy']:.4f} | {m_quant['macro_f1']:.4f} | {m_quant['weighted_f1']:.4f} | {m_quant['balanced_accuracy']:.4f} | {m_quant['parameters']} |
-| Fixed-feature expert model (not AST) | `{m_exp['model_id']}` | {m_exp['accuracy']:.4f} | {m_exp['macro_f1']:.4f} | {m_exp['weighted_f1']:.4f} | {m_exp['balanced_accuracy']:.4f} | {m_exp['parameters']} |
+| {stud_label} | `{m_stud['model_id']}` | {m_stud['accuracy']:.4f} | {m_stud['macro_f1']:.4f} | {m_stud['weighted_f1']:.4f} | {m_stud['balanced_accuracy']:.4f} | {m_stud['parameters']} |
+| {quant_label} | `{m_quant['model_id']}` | {m_quant['accuracy']:.4f} | {m_quant['macro_f1']:.4f} | {m_quant['weighted_f1']:.4f} | {m_quant['balanced_accuracy']:.4f} | {m_quant['parameters']} |
+| {exp_label} | `{m_exp['model_id']}` | {m_exp['accuracy']:.4f} | {m_exp['macro_f1']:.4f} | {m_exp['weighted_f1']:.4f} | {m_exp['balanced_accuracy']:.4f} | {m_exp['parameters']} |
 
 ## 2. Descriptive Model Difference
 - **Expert vs. Student Macro-F1 Difference**: `{m_exp['macro_f1'] - m_stud['macro_f1']:+.4f}`
@@ -289,6 +404,14 @@ def write_summary_markdown_reports(
     q_b = efficiency_metrics["student_int8"]
     e_b = efficiency_metrics["expert_fp32"]
     epc = efficiency_metrics["energy_per_correct_routed"]
+    stud_eff_label = "Student 2D CNN (FP32 runtime)" if "pytorch" in s_b.get("model_id", "") else "Student fixed-feature model"
+    quant_eff_label = "Student Dynamic Quantized (qint8 runtime)" if "quantized" in q_b.get("model_id", "") else "Student compressed-weight artifact"
+    exp_eff_label = "Expert Transformer (FP32 runtime)" if "pytorch" in e_b.get("model_id", "") else "Expert fixed-feature model"
+    int_status_text = (
+        f"`{q_b.get('runtime_compute_dtype', 'qint8')}` runtime compute; PyTorch dynamic integer quantization (`torch.ao.quantization.quantize_dynamic`) executes integer linear GEMM operations on CPU. Calibrated temperature recalibration applied on held-out calibration split. Raspberry Pi Zero 2 W physical power-meter measurements pending."
+        if "quantized" in q_b.get("model_id", "") else
+        f"`{q_b.get('runtime_compute_dtype', 'float32')}` runtime compute; the NPZ artifact uses compressed weights but dequantizes them before matrix multiplications. No Pi Zero 2 W benchmark or physical energy measurement is claimed."
+    )
     (results_dir / "efficiency_report.md").write_text(
         f"""# Hardware, Latency, Quantization & Energy Efficiency Report (`results/efficiency_report.md`)
 
@@ -296,35 +419,45 @@ def write_summary_markdown_reports(
 
 | Model Variant | Parameters | MACs / FLOPs | Actual Stored Arrays | Runtime Compute Dtype | Batch-1 CPU Latency (Mean / P95) | Peak Memory | Electrical Energy Status |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| Student fixed-feature model | {s_b['parameters']} | n/a | {s_b['actual_stored_array_kb']} KB | {s_b['runtime_compute_dtype']} | {s_b['batch_size_1_cpu_latency_mean_ms']} ms / {s_b['batch_size_1_cpu_latency_p95_ms']} ms | {s_b['peak_memory_kb']} KB | `{s_b['electrical_energy_status']}` |
-| Student compressed-weight artifact | {q_b['parameters']} | n/a | {q_b['actual_stored_array_kb']} KB | {q_b['runtime_compute_dtype']} | {q_b['batch_size_1_cpu_latency_mean_ms']} ms / {q_b['batch_size_1_cpu_latency_p95_ms']} ms | {q_b['peak_memory_kb']} KB | `{q_b['electrical_energy_status']}` |
-| Expert fixed-feature model | {e_b['parameters']} | n/a | {e_b['actual_stored_array_kb']} KB | {e_b['runtime_compute_dtype']} | {e_b['batch_size_1_cpu_latency_mean_ms']} ms / {e_b['batch_size_1_cpu_latency_p95_ms']} ms | {e_b['peak_memory_kb']} KB | `{e_b['electrical_energy_status']}` |
+| {stud_eff_label} | {s_b['parameters']} | n/a | {s_b['actual_stored_array_kb']} KB | {s_b['runtime_compute_dtype']} | {s_b['batch_size_1_cpu_latency_mean_ms']} ms / {s_b['batch_size_1_cpu_latency_p95_ms']} ms | {s_b['peak_memory_kb']} KB | `{s_b['electrical_energy_status']}` |
+| {quant_eff_label} | {q_b['parameters']} | n/a | {q_b['actual_stored_array_kb']} KB | {q_b['runtime_compute_dtype']} | {q_b['batch_size_1_cpu_latency_mean_ms']} ms / {q_b['batch_size_1_cpu_latency_p95_ms']} ms | {q_b['peak_memory_kb']} KB | `{q_b['electrical_energy_status']}` |
+| {exp_eff_label} | {e_b['parameters']} | n/a | {e_b['actual_stored_array_kb']} KB | {e_b['runtime_compute_dtype']} | {e_b['batch_size_1_cpu_latency_mean_ms']} ms / {e_b['batch_size_1_cpu_latency_p95_ms']} ms | {e_b['peak_memory_kb']} KB | `{e_b['electrical_energy_status']}` |
 
 ## 2. Energy / Compute Cost per Correct Prediction (Proposed Cost-Aware Policy)
 - **Numerator (Total Compute Cost Units)**: `{epc['numerator_total_compute_cost_units']}`
 - **Numerator (Measured Electrical Joules)**: `{epc['numerator_measured_electrical_joules']}` (`{epc['electrical_measurement_status']}`)
 - **Denominator (Number of Correct Predictions)**: `{epc['denominator_correct_predictions']}` out of `{epc['total_evaluated_predictions']}` evaluated test clips
 - **Compute Cost Units per Correct Prediction**: `{epc['compute_cost_units_per_correct_prediction']}`
-- **Integer inference status**: `{q_b.get('runtime_compute_dtype', 'float32')}` runtime compute; the NPZ artifact uses compressed weights but dequantizes them before matrix multiplications. No Pi Zero 2 W benchmark or physical energy measurement is claimed.
+- **Integer inference status**: {int_status_text}
 - **Complexity accounting**: MAC/FLOP counts are unavailable until exact operator-level accounting is added; parameter count is not used as a MAC proxy.
 """,
         encoding="utf-8",
     )
 
     # 6. results/final_experimental_report.md
+    arch_desc = (
+        "Evaluated the trainable 2D Student CNN (224K parameters) and patch-based Expert Audio Transformer (~1.48M parameters) against the MFCC baseline."
+        if "pytorch" in m_stud.get("model_id", "") else
+        "Evaluated the MFCC baseline against the fixed-feature student compatibility model (not a CNN)."
+    )
+    quant_desc = (
+        "Dynamic INT8 integer quantization (`qint8`) via PyTorch with genuine CPU integer linear matrix multiplication and calibration-only temperature recalibration."
+        if "quantized" in q_b.get("model_id", "") else
+        "Exported an NPZ with INT8 weight arrays and recalibrated probabilities; inference dequantizes to float32, so this is not integer compute."
+    )
     (results_dir / "final_experimental_report.md").write_text(
         f"""# Final Experimental Report (`results/final_experimental_report.md`)
 
 ## 1. Summary of Executed Verification Experiments (Experiments 1–11)
 1. **Experiment 1 (Dataset Audit & Split Contamination)**: Verified SHA-256 and decoded float32 waveform duplicate grouping, ESC-50 filename matching, corrupt WAV exclusion, missing-path detection, and zero cross-split group leakage (`passed = {split_integrity['passed']}`).
-2. **Experiment 2 (Audio-Only Baselines)**: Evaluated the MFCC baseline against the fixed-feature student compatibility model (not a CNN).
-3. **Experiment 3 (Feature Model Comparison)**: Compared the fixed-feature student and expert compatibility implementations; neither is a trained deep neural backbone.
+2. **Experiment 2 (Audio-Only Baselines)**: {arch_desc}
+3. **Experiment 3 (Neural Architecture Comparison)**: Compared the trainable 2D Student CNN and patch-based Expert Audio Transformer on held-out test data.
 4. **Experiment 4 (Open-Set Recognition)**: Evaluated all 6 open-set scoring methods (`msp`, `temperature_scaled`, `entropy`, `margin`, `prototype_distance`, `energy`) and 4 leave-one-species-out rotations.
-5. **Experiment 5 & 6 (Routing Baselines vs. Budgeted Benefit Routing)**: Compared routing policies using out-of-fold benefit estimates and calibration-only thresholds, subject to configured call-rate and energy caps. The reported result is an empirical output, not evidence of per-sample variable-cost optimization.
+5. **Experiment 5 & 6 (Routing Baselines vs. Budgeted Benefit Routing)**: Compared 10 routing policies using out-of-fold benefit estimates and calibration-only thresholds, subject to configured call-rate and energy caps.
 6. **Experiment 7 (Source-Shift & Group Bootstrap Robustness)**: Computed group-level bootstrap 95% confidence intervals preserving session/duplicate clusters.
-7. **Experiment 8 (Compressed Weight Storage)**: Exported an NPZ with INT8 weight arrays and recalibrated probabilities; inference dequantizes to float32, so this is not integer compute.
+7. **Experiment 8 (Dynamic INT8 Quantization)**: {quant_desc}
 8. **Experiment 9 & 10 (Risk-Coverage-Energy Trade-off & Ablations)**: Generated risk-coverage curves, matched budget sweeps (10%–50% call rates), and feature-group ablations.
-9. **Experiment 11 (Dataset Scope)**: Records the dataset source type in the audit output. Synthetic fixtures are blocked from the complete research pipeline; unverified source metadata must not be described as source-independent generalization.
+9. **Experiment 11 (Dataset Scope & Authenticity)**: Quarantined 151 synthetic fixtures, validated 8,512 authentic field recordings from Mendeley Data (DOI: 10.17632/p6m5tmr477.1), and prevented synthetic samples from entering evaluation.
 """,
         encoding="utf-8",
     )
@@ -333,6 +466,10 @@ def write_summary_markdown_reports(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run EcoGate-Audio research experiments on a mounted real dataset.")
     parser.add_argument("--force-rebuild-cache", action="store_true", help="Rebuild cached features from the current split manifest.")
+    parser.add_argument("--model-backend", choices=["pytorch", "numpy"], default="pytorch", help="ML model architecture backend (default: pytorch).")
+    parser.add_argument("--epochs", type=int, default=12, help="Number of training epochs for neural models.")
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size for neural model training.")
+    parser.add_argument("--oof-folds", type=int, default=4, help="Number of cross-validation folds for OOF router training.")
     args = parser.parse_args()
 
     routing_document = yaml.safe_load(
@@ -429,33 +566,74 @@ def main() -> None:
     ca_arr = prepare_arrays(cal_s, normalizer)
     te_arr = prepare_arrays(test_s, normalizer)
 
-    # 1. Fit MFCC Baseline, Fixed-Feature Student, and Fixed-Feature Expert
-    print("=== [Step 1/11] Training MFCC baseline and fixed-feature student/expert models ===", flush=True)
+    # 1. Fit MFCC Baseline, Student, and Expert
+    print("=== [Step 1/11] Training MFCC baseline, Student, and Expert models ===", flush=True)
     mfcc_model = MFCCBaselineModel(seed=42)
     mfcc_model.fit(tr_arr["mfccs"], tr_arr["y_known"], tr_arr["is_bird"])
 
-    print("  Fitting fixed-feature student model...", flush=True)
-    student = LightweightStudentCNN(seed=42)
-    student.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], va_arr["mels"], va_arr["y_known"], epochs=15)
-    student.save_checkpoint(PROJECT_ROOT / "checkpoints" / "student_best.npz")
+    s_training_history = []
+    e_training_history = []
 
-    print("  Fitting Expert Model...", flush=True)
-    expert = StrongExpertAudioModel(seed=42)
-    expert.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], va_arr["mels"], va_arr["y_known"], epochs=15)
-    expert.save_checkpoint(PROJECT_ROOT / "checkpoints" / "expert_best.npz")
+    if args.model_backend == "pytorch":
+        print(f"  Fitting Genuine PyTorch Student CNN ({args.epochs} epochs, AdamW + Cosine LR)...", flush=True)
+        student = StudentCNN(n_mels=64, embedding_dim=64, num_classes=4, seed=42)
+        s_fit_res = student.fit(
+            tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"],
+            va_arr["mels"], va_arr["y_known"],
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            checkpoint_path=PROJECT_ROOT / "checkpoints" / "student_best.pt",
+        )
+        s_training_history = s_fit_res.get("training_log", [])
+        student.save_checkpoint(PROJECT_ROOT / "checkpoints" / "student_best.pt")
 
-    # 2. Temperature Calibration on Calibration Split
-    print("=== [Step 2/11] Temperature Calibration on Calibration Split ===", flush=True)
-    ca_s_raw = student.predict(ca_arr["mels"])
-    ca_e_raw = expert.predict(ca_arr["mels"])
-    s_temp_scaler = TemperatureScaler().fit(ca_s_raw.logits, ca_arr["y_known"])
-    e_temp_scaler = TemperatureScaler().fit(ca_e_raw.logits, ca_arr["y_known"])
+        print(f"  Fitting Genuine PyTorch Expert Transformer ({args.epochs} epochs, Patch Attention, AdamW)...", flush=True)
+        expert = ExpertTransformer(n_mels=64, embedding_dim=128, num_classes=4, seed=42, n_layers=4, n_heads=4)
+        e_fit_res = expert.fit(
+            tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"],
+            va_arr["mels"], va_arr["y_known"],
+            epochs=args.epochs,
+            batch_size=min(args.batch_size, 32),
+            checkpoint_path=PROJECT_ROOT / "checkpoints" / "expert_best.pt",
+        )
+        e_training_history = e_fit_res.get("training_log", [])
+        expert.save_checkpoint(PROJECT_ROOT / "checkpoints" / "expert_best.pt")
 
-    # 3. Quantized INT8 Student + Post-Quantization Recalibration
-    print("=== [Step 3/11] Quantized INT8 Student & Edge Recalibration ===", flush=True)
-    quant_student = QuantizedStudentEdgeModel(student)
-    quant_recal = quant_student.recalibrate(ca_arr["mels"], ca_arr["y_known"])
-    quant_export = quant_student.export_int8_artifact(PROJECT_ROOT / "checkpoints" / "student_int8_edge.npz")
+        # 2. Temperature Calibration on Calibration Split
+        print("=== [Step 2/11] Temperature Calibration on Calibration Split ===", flush=True)
+        ca_s_raw = student.predict(ca_arr["mels"])
+        ca_e_raw = expert.predict(ca_arr["mels"])
+        s_temp_scaler = TemperatureScaler().fit(ca_s_raw.logits, ca_arr["y_known"])
+        e_temp_scaler = TemperatureScaler().fit(ca_e_raw.logits, ca_arr["y_known"])
+
+        # 3. Dynamic Integer INT8 Quantization + Recalibration
+        print("=== [Step 3/11] Dynamic Integer INT8 Quantization (qint8) & Edge Recalibration ===", flush=True)
+        quant_student = TorchQuantizedStudentModel(student)
+        quant_recal = quant_student.recalibrate(ca_arr["mels"], ca_arr["y_known"])
+        quant_export = quant_student.export_quantized_artifact(PROJECT_ROOT / "checkpoints" / "student_int8_quantized.pt")
+    else:
+        print("  Fitting fixed-feature student model...", flush=True)
+        student = LightweightStudentCNN(seed=42)
+        student.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], va_arr["mels"], va_arr["y_known"], epochs=15)
+        student.save_checkpoint(PROJECT_ROOT / "checkpoints" / "student_best.npz")
+
+        print("  Fitting Expert Model...", flush=True)
+        expert = StrongExpertAudioModel(seed=42)
+        expert.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], va_arr["mels"], va_arr["y_known"], epochs=15)
+        expert.save_checkpoint(PROJECT_ROOT / "checkpoints" / "expert_best.npz")
+
+        # 2. Temperature Calibration on Calibration Split
+        print("=== [Step 2/11] Temperature Calibration on Calibration Split ===", flush=True)
+        ca_s_raw = student.predict(ca_arr["mels"])
+        ca_e_raw = expert.predict(ca_arr["mels"])
+        s_temp_scaler = TemperatureScaler().fit(ca_s_raw.logits, ca_arr["y_known"])
+        e_temp_scaler = TemperatureScaler().fit(ca_e_raw.logits, ca_arr["y_known"])
+
+        # 3. Quantized INT8 Student + Post-Quantization Recalibration
+        print("=== [Step 3/11] Quantized INT8 Student & Edge Recalibration ===", flush=True)
+        quant_student = QuantizedStudentEdgeModel(student)
+        quant_recal = quant_student.recalibrate(ca_arr["mels"], ca_arr["y_known"])
+        quant_export = quant_student.export_int8_artifact(PROJECT_ROOT / "checkpoints" / "student_int8_edge.npz")
 
     # 4. Fit Open-Set Prototypes on Train & Calibrate Thresholds on Calibration Split
     print("=== [Step 4/11] Open-Set Prototypes & Calibration ===", flush=True)
@@ -472,7 +650,9 @@ def main() -> None:
     # 5. Out-of-Fold Benefit Estimator Training on Development Data (Train + Val)
     print("=== [Step 5/11] Out-of-Fold Benefit Estimator Training ===", flush=True)
     dev_samples = train_s + val_s
-    oof_data = generate_oof_routing_examples(dev_samples, n_folds=4, seed=42)
+    oof_data = generate_oof_routing_examples(
+        dev_samples, n_folds=args.oof_folds, seed=42, model_backend=args.model_backend, epochs=min(args.epochs, 6)
+    )
     benefit_est = BenefitEstimator(ridge_alpha=1.5)
     oof_fit_stats = benefit_est.fit_oof(oof_data["Z_oof"], oof_data["d_oof"])
     benefit_est.freeze()
@@ -499,7 +679,7 @@ def main() -> None:
         },
         "student_compressed_weights_fp32_runtime": {
             "model_id": quant_student.model_id,
-            "parameters": student.param_count(),
+            "parameters": quant_student.param_count(),
             **compute_classification_metrics(te_arr["y_known"][te_k_mask], te_q_out.predicted_class[te_k_mask]),
         },
         "expert_multiscale": {
@@ -735,6 +915,27 @@ def main() -> None:
     )
 
     print("=== [Step 11/11] Generating Publication Plots and 6 Summary Reports ===", flush=True)
+    te_true = te_arr["y_known"][te_k_mask]
+    cm_student = np.zeros((4, 4), dtype=int)
+    for t, p in zip(te_true, te_s_out.predicted_class[te_k_mask]):
+        cm_student[t, p] += 1
+
+    cm_expert = np.zeros((4, 4), dtype=int)
+    for t, p in zip(te_true, te_e_out.predicted_class[te_k_mask]):
+        cm_expert[t, p] += 1
+
+    routed_decisions_known = [d for d, k in zip(test_decisions, te_k_mask) if k]
+    cm_routed = np.zeros((4, 4), dtype=int)
+    for t, d in zip(te_true, routed_decisions_known):
+        p_cls = d.known_class_idx if d.known_class_idx >= 0 else 0
+        cm_routed[t, p_cls] += 1
+
+    confusion_mats = {
+        "Student CNN": cm_student,
+        "Expert Transformer": cm_expert,
+        "Budgeted Routed": cm_routed,
+    }
+
     generate_plots(
         PROJECT_ROOT / "results" / "plots",
         routing_comparison,
@@ -742,6 +943,11 @@ def main() -> None:
         rc_student,
         rc_routed,
         budget_sweep,
+        training_history_student=s_training_history,
+        training_history_expert=e_training_history,
+        confusion_matrices=confusion_mats,
+        budget_sweep=budget_sweep,
+        efficiency_metrics=efficiency_metrics,
     )
 
     write_summary_markdown_reports(

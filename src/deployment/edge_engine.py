@@ -13,6 +13,13 @@ import numpy as np
 from src.calibration.calibrator import TemperatureScaler
 from src.models.audio_models import LightweightStudentCNN, ModelOutput, softmax, sigmoid, silu
 
+try:
+    import torch
+    import torch.nn as nn
+    _TORCH_AVAILABLE = True
+except ImportError:
+    _TORCH_AVAILABLE = False
+
 
 def quantize_array_int8(arr: np.ndarray) -> Tuple[np.ndarray, float]:
     max_val = float(np.max(np.abs(arr))) + 1e-12
@@ -23,6 +30,135 @@ def quantize_array_int8(arr: np.ndarray) -> Tuple[np.ndarray, float]:
 
 def dequantize_array_int8(q: np.ndarray, scale: float) -> np.ndarray:
     return q.astype(np.float32) * scale
+
+
+class TorchQuantizedStudentModel:
+    """
+    Genuine integer INT8 dynamic-quantized model for StudentCNN.
+    Uses PyTorch integer quantization (torch.ao.quantization.quantize_dynamic) over
+    linear projection and classification heads, executing genuine integer arithmetic
+    (qint8 GEMM) on CPU at runtime.
+    """
+
+    def __init__(self, pytorch_student: Any) -> None:
+        if not _TORCH_AVAILABLE:
+            raise RuntimeError("TorchQuantizedStudentModel requires PyTorch.")
+        self.model_id = f"{pytorch_student.model_id}_qint8_dynamic_quantized"
+        self.num_classes = pytorch_student.num_classes
+        self.recalibrated_temperature: float = 1.0
+        self.runtime_compute_dtype: str = "qint8"
+
+        import copy
+        # Deepcopy to CPU so we do NOT mutate the original student model in-place!
+        cpu_net = copy.deepcopy(pytorch_student._net).cpu().eval()
+        # Apply dynamic integer quantization to Linear modules
+        self._quantized_net = torch.ao.quantization.quantize_dynamic(
+            cpu_net,
+            {nn.Linear},
+            dtype=torch.qint8,
+        )
+        self._quantized_net.eval()
+
+    def param_count(self) -> int:
+        return int(sum(p.numel() for p in self._quantized_net.parameters()))
+
+    def storage_bytes(self) -> int:
+        """Estimate actual storage bytes for quantized weights and fp32 conv layers."""
+        total = 0
+        for p in self._quantized_net.parameters():
+            total += p.numel() * p.element_size()
+        return total
+
+    def recalibrate(self, cal_mels: np.ndarray, cal_y_known: np.ndarray) -> Dict[str, float]:
+        out = self.predict(cal_mels, temperature=1.0)
+        scaler = TemperatureScaler(init_temperature=1.0)
+        stats = scaler.fit(out.logits, cal_y_known)
+        self.recalibrated_temperature = scaler.temperature
+        return stats
+
+    @torch.no_grad()
+    def _forward_batch(self, mels: np.ndarray, chunk_size: int = 128) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        n = mels.shape[0]
+        if n == 0:
+            return (
+                np.zeros((0, self.num_classes), dtype=np.float32),
+                np.zeros((0, 64), dtype=np.float32),
+                np.zeros(0, dtype=np.float32),
+            )
+        logits_list = []
+        embs_list = []
+        bird_list = []
+        for i in range(0, n, chunk_size):
+            X = torch.from_numpy(mels[i : i + chunk_size, None, :, :].astype(np.float32))
+            logits_cls, logits_bird, emb = self._quantized_net(X)
+            logits_list.append(logits_cls.numpy().astype(np.float32))
+            embs_list.append(emb.numpy().astype(np.float32))
+            bird_list.append(logits_bird.numpy().astype(np.float32))
+        return (
+            np.concatenate(logits_list, axis=0),
+            np.concatenate(embs_list, axis=0),
+            np.concatenate(bird_list, axis=0),
+        )
+
+    def forward_embeddings(self, mels: np.ndarray) -> np.ndarray:
+        single = mels.ndim == 2
+        batch = mels[None, :, :] if single else mels
+        _, emb, _ = self._forward_batch(batch)
+        return emb[0] if single else emb
+
+    def predict(self, mels: np.ndarray, temperature: Optional[float] = None) -> ModelOutput:
+        t0 = time.perf_counter()
+        temp = temperature if temperature is not None else self.recalibrated_temperature
+        single = mels.ndim == 2
+        batch = mels[None, :, :] if single else mels
+
+        logits, emb, bird_logits = self._forward_batch(batch)
+        probs = softmax(logits, temperature=temp)
+        preds = np.argmax(probs, axis=-1)
+        bird_prob = sigmoid(bird_logits)
+        dur = time.perf_counter() - t0
+
+        if single:
+            return ModelOutput(
+                logits=logits[0],
+                probabilities=probs[0],
+                predicted_class=int(preds[0]),
+                embeddings=emb[0],
+                bird_activity_prob=float(bird_prob[0]),
+                inference_duration_sec=dur,
+                model_id=self.model_id,
+            )
+        return ModelOutput(
+            logits=logits,
+            probabilities=probs,
+            predicted_class=preds,
+            embeddings=emb,
+            bird_activity_prob=bird_prob,
+            inference_duration_sec=dur,
+            model_id=self.model_id,
+        )
+
+    def export_quantized_artifact(self, path: Path) -> Dict[str, Any]:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "model_state_dict": self._quantized_net.state_dict(),
+                "model_id": self.model_id,
+                "recalibrated_temperature": self.recalibrated_temperature,
+                "quantization_type": "dynamic_int8_linear",
+                "runtime_compute_dtype": "qint8",
+            },
+            path,
+        )
+        return {
+            "artifact_path": str(path),
+            "size_bytes": path.stat().st_size,
+            "weights_storage_dtype": "qint8",
+            "runtime_compute_dtype": "qint8",
+            "integer_matmul": True,
+            "export_note": "Dynamic INT8 quantized PyTorch model with genuine integer linear operations.",
+        }
 
 
 class QuantizedStudentEdgeModel:
