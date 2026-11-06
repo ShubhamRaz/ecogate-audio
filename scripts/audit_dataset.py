@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 1. Dataset Audit Script (`scripts/audit_dataset.py`)
-Scans `data/raw` (generating the deterministic reference validation dataset if `data/raw` is empty
-so the audit pipeline is immediately runnable), checks `annotations.csv`, computes SHA-256 and
-decoded waveform hashes, and saves `data/audited/audit_summary.json` and `results/dataset_audit_report.md`.
+Scans the mounted `data/raw` archive, checks annotation references, computes SHA-256 and
+decoded waveform hashes, and saves audited manifests and a machine-readable summary. Synthetic
+reference data can be generated only with the explicit smoke-test flag.
 """
 import argparse
 import json
