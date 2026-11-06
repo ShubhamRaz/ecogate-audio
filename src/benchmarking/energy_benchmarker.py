@@ -29,7 +29,15 @@ def benchmark_model_inference(
     Measure batch-size-1 latency, batch latency, peak memory allocation, parameter storage,
     and power/energy metrics.
     """
-    single_input = sample_input[0] if sample_input.ndim > 2 else sample_input[0]
+    sample_input = np.asarray(sample_input)
+    if sample_input.ndim == 3:
+        single_input = sample_input[0]
+    elif sample_input.ndim == 2:
+        single_input = sample_input
+    else:
+        raise ValueError("sample_input must have shape (N, M, T) or (M, T).")
+    if n_warmup < 0 or n_runs < 1:
+        raise ValueError("n_warmup must be non-negative and n_runs must be at least 1.")
     for _ in range(n_warmup):
         model.predict(single_input)
 
