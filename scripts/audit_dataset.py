@@ -24,7 +24,7 @@ def main() -> None:
         "--allow-synthetic-fixture", action="store_true",
         help="Explicitly generate/use the synthetic reference fixture when no WAV archive is present. Never use this mode for research metrics.",
     )
-    args = parser.parse_args()
+    args, _unknown = parser.parse_known_args()
     raw_dir = PROJECT_ROOT / "data" / "raw"
     ann_csv = PROJECT_ROOT / "data" / "manifests" / "annotations_reference.csv"
     if not discover_files_recursive(raw_dir, (".wav",)):
