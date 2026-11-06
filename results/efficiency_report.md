@@ -1,3 +1,5 @@
+> **STATUS: INVALIDATED HISTORICAL OUTPUT — DO NOT CITE.** The former MAC/FLOP values were calculated as parameter_count × 301 rather than from actual operators. The former INT8 wrapper dequantized weights to float32 before matrix multiplication, so its timings were not integer-inference benchmarks. The corrected code reports exact MAC/FLOP values as unavailable until operator accounting is implemented, records actual stored array bytes, and labels the runtime dtype. Re-run CPU measurements and benchmark the target Raspberry Pi with a repeatable protocol before making deployment claims.
+
 # Hardware, Latency, Quantization & Energy Efficiency Report (`results/efficiency_report.md`)
 
 ## 1. Model Complexity & Measured CPU Latency (`Windows-10-10.0.26300-SP0`)
