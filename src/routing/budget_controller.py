@@ -56,7 +56,7 @@ class BudgetController:
         cal_estimated_benefits: np.ndarray,
         cal_student_losses: np.ndarray,
         cal_expert_losses: np.ndarray,
-        lambda_cost: float = 0.15,
+        lambda_cost: float = 0.01,
         target_call_rate: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
