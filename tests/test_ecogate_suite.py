@@ -442,8 +442,10 @@ class TestEcoGateAudioSuite(unittest.TestCase):
         """Test genuine PyTorch StudentCNN and ExpertTransformer architectures and checkpoints."""
         try:
             import torch
-            from src.models.pytorch_models import StudentCNN, ExpertTransformer
-        except ImportError:
+            from src.models.pytorch_models import StudentCNN, ExpertTransformer, _TORCH_AVAILABLE
+            if not _TORCH_AVAILABLE:
+                self.skipTest("PyTorch is not available.")
+        except Exception:
             self.skipTest("PyTorch is not yet installed in this environment.")
 
         X_mel = np.random.RandomState(42).normal(0, 1, size=(4, 64, 301)).astype(np.float32)
@@ -477,9 +479,11 @@ class TestEcoGateAudioSuite(unittest.TestCase):
         """Test TorchQuantizedStudentModel dynamic integer quantization and export."""
         try:
             import torch
-            from src.models.pytorch_models import StudentCNN
+            from src.models.pytorch_models import StudentCNN, _TORCH_AVAILABLE
             from src.deployment.edge_engine import TorchQuantizedStudentModel
-        except ImportError:
+            if not _TORCH_AVAILABLE:
+                self.skipTest("PyTorch is not available.")
+        except Exception:
             self.skipTest("PyTorch is not yet installed in this environment.")
 
         student = StudentCNN(n_mels=64, embedding_dim=64, num_classes=4, seed=42)

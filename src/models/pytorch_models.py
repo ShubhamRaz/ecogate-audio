@@ -42,8 +42,17 @@ try:
     from torch.utils.data import DataLoader, TensorDataset
 
     _TORCH_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except (ImportError, Exception):  # pragma: no cover
     _TORCH_AVAILABLE = False
+
+    class _DummyModule:
+        pass
+
+    class _DummyNN:
+        Module = _DummyModule
+
+    nn = _DummyNN()  # type: ignore[assignment]
+    F = None  # type: ignore[assignment]
 
 from src.models.audio_models import ModelOutput, softmax, sigmoid
 

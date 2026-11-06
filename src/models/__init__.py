@@ -17,7 +17,7 @@ try:
         train_model,
     )
     _PYTORCH_MODELS_AVAILABLE = True
-except ImportError:
+except (ImportError, NameError, Exception):
     _PYTORCH_MODELS_AVAILABLE = False
 
 __all__ = [
