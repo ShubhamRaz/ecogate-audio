@@ -184,6 +184,9 @@ def evaluate_routing_policies_on_split(
     cal_e_loss: np.ndarray,
     benefit_estimator: BenefitEstimator,
     target_call_rate: float = 0.25,
+    lambda_cost: float = 0.01,
+    bird_activity_threshold: float = 0.35,
+    budget_config: Optional[BudgetPolicyConfig] = None,
     seed: int = 42,
 ) -> Dict[str, Dict[str, Any]]:
     """
@@ -191,6 +194,20 @@ def evaluate_routing_policies_on_split(
     call-rate cap; cost and pre-expert quality gates may result in lower realized rates.
     All thresholds are calibrated strictly on the calibration split.
     """
+    cfg = budget_config or BudgetPolicyConfig()
+    energy_limited_rate = (
+        cfg.max_average_energy_units - cfg.student_cost_units - cfg.router_overhead_units
+    ) / max(cfg.expert_cost_units, 1e-12)
+    if not 0.0 <= target_call_rate <= 1.0:
+        raise ValueError("target_call_rate must be in [0, 1].")
+    if not np.isfinite(lambda_cost) or lambda_cost < 0:
+        raise ValueError("lambda_cost must be finite and non-negative.")
+    effective_target_rate = min(
+        float(target_call_rate),
+        max(0.0, float(cfg.max_expert_call_rate)),
+        max(0.0, float(energy_limited_rate)),
+    )
+
     n = test_arr["y_known"].size
     s_loss = compute_sample_loss(s_out.probabilities, s_out.bird_activity_prob, test_arr["y_known"], test_arr["is_bird"])
     e_loss = compute_sample_loss(e_out.probabilities, e_out.bird_activity_prob, test_arr["y_known"], test_arr["is_bird"])
@@ -210,27 +227,30 @@ def evaluate_routing_policies_on_split(
 
     # Fit thresholds on calibration set for target_call_rate
     conf_r = ConfidenceRouter()
-    conf_r.fit_threshold_for_call_rate(cal_s_nov_feats["raw_max_prob"], target_call_rate)
+    conf_r.fit_threshold_for_call_rate(cal_s_nov_feats["raw_max_prob"], effective_target_rate)
 
     ent_r = EntropyRouter()
-    ent_r.fit_threshold_for_call_rate(cal_s_nov_feats["entropy"], target_call_rate)
+    ent_r.fit_threshold_for_call_rate(cal_s_nov_feats["entropy"], effective_target_rate)
 
     mar_r = MarginRouter()
-    mar_r.fit_threshold_for_call_rate(cal_s_nov_feats["raw_margin"], target_call_rate)
+    mar_r.fit_threshold_for_call_rate(cal_s_nov_feats["raw_margin"], effective_target_rate)
 
     proto_r = PrototypeRouter()
-    proto_r.fit_threshold_for_call_rate(cal_s_nov_feats["prototype_distance"], target_call_rate)
+    proto_r.fit_threshold_for_call_rate(cal_s_nov_feats["prototype_distance"], effective_target_rate)
 
     # Cost-blind learned benefit router (invokes whenever est_benefit > quantile on calibration)
-    cb_bc = BudgetController()
+    cb_bc = BudgetController(cfg)
     cb_bc.optimize_threshold_on_calibration(est_b_cal, cal_s_loss, cal_e_loss, lambda_cost=0.0, target_call_rate=target_call_rate)
 
     # Proposed cost-aware benefit router (incorporates lambda * expert_cost floor + budget cap)
-    ca_bc = BudgetController()
-    ca_bc.optimize_threshold_on_calibration(est_b_cal, cal_s_loss, cal_e_loss, lambda_cost=0.01, target_call_rate=target_call_rate)
+    ca_bc = BudgetController(cfg)
+    ca_bc.optimize_threshold_on_calibration(est_b_cal, cal_s_loss, cal_e_loss, lambda_cost=lambda_cost, target_call_rate=target_call_rate)
 
     rng = np.random.RandomState(seed)
-    rand_mask = rng.uniform(0.0, 1.0, size=n) < target_call_rate
+    random_call_count = min(n, int(np.floor(effective_target_rate * n)))
+    rand_mask = np.zeros(n, dtype=bool)
+    if random_call_count:
+        rand_mask[rng.choice(n, size=random_call_count, replace=False)] = True
 
     # Offline oracle (upper bound only - uses true test loss reduction)
     true_d = s_loss - e_loss
@@ -246,7 +266,7 @@ def evaluate_routing_policies_on_split(
         "margin_routing": mar_r.route(s_nov_feats["raw_margin"]),
         "prototype_distance_routing": proto_r.route(s_nov_feats["prototype_distance"]),
         "cost_blind_benefit_routing": est_b_test > cb_bc.calibrated_threshold,
-        "proposed_cost_aware_routing": (est_b_test > ca_bc.calibrated_threshold) & (s_out.bird_activity_prob > 0.35),
+        "proposed_cost_aware_routing": (est_b_test > ca_bc.calibrated_threshold) & (s_out.bird_activity_prob > bird_activity_threshold),
         "offline_oracle_upper_bound": oracle_mask,
     }
 
@@ -267,7 +287,12 @@ def evaluate_routing_policies_on_split(
         routed_preds = np.where(mask, e_preds, s_preds)
         cls_m = compute_classification_metrics(test_arr["y_known"][known_mask], routed_preds[known_mask])
 
-        avg_cost_units = 1.0 + (0.05 if pname not in ("student_only", "expert_only") else 0.0) + call_rate * 4.5
+        if pname == "student_only":
+            avg_cost_units = cfg.student_cost_units
+        elif pname == "expert_only":
+            avg_cost_units = cfg.expert_cost_units
+        else:
+            avg_cost_units = cfg.student_cost_units + cfg.router_overhead_units + call_rate * cfg.expert_cost_units
         ci_loss = group_bootstrap_ci(test_arr["groups"], combined_loss)
 
         results[pname] = {
