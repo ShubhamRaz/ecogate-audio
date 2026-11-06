@@ -24,7 +24,7 @@ A research prototype for audio-only bird-sound classification, open-set rejectio
 - `frontend/`: React monitoring interface.
 - `manuscript/`: provisional manuscript scaffold.
 - `results/`: historical reports; see each report's status banner.
-- `tests/`: eight integration/unit test methods in the current suite (not an 18-step suite).
+- `tests/`: nine integration/unit test methods in the current suite (not an 18-step suite).
 
 ## Setup
 
