@@ -1,18 +1,17 @@
-> **STATUS: INVALIDATED HISTORICAL OUTPUT — DO NOT CITE.** The former MAC/FLOP values were calculated as parameter_count × 301 rather than from actual operators. The former INT8 wrapper dequantized weights to float32 before matrix multiplication, so its timings were not integer-inference benchmarks. The corrected code reports exact MAC/FLOP values as unavailable until operator accounting is implemented, records actual stored array bytes, and labels the runtime dtype. Re-run CPU measurements and benchmark the target Raspberry Pi with a repeatable protocol before making deployment claims.
-
 # Hardware, Latency, Quantization & Energy Efficiency Report (`results/efficiency_report.md`)
 
 ## 1. Model Complexity & Measured CPU Latency (`Windows-10-10.0.26300-SP0`)
 
-| Model Variant | Parameters | Est. MACs / Clip | Est. FLOPs / Clip | Storage (FP32 / INT8) | Batch-1 CPU Latency (Mean / P95) | Peak Memory | Electrical Energy Status |
+| Model Variant | Parameters | MACs / FLOPs | Actual Stored Arrays | Runtime Compute Dtype | Batch-1 CPU Latency (Mean / P95) | Peak Memory | Electrical Energy Status |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| Student CNN (FP32) | 13925 | 4191425 | 8382850 | 54.39 KB | 1.786 ms / 2.558 ms | 28.12 KB | `not_measured_no_physical_power_meter_attached` |
-| Student CNN (INT8) | 13765 | 4143265 | 8286530 | 13.44 KB | 1.617 ms / 1.96 ms | 75.34 KB | `not_measured_no_physical_power_meter_attached` |
-| Strong Expert (FP32) | 82821 | 24929121 | 49858242 | 323.52 KB | 5.021 ms / 7.638 ms | 3986.58 KB | `not_measured_no_physical_power_meter_attached` |
+| Student 2D CNN (FP32 runtime) | 198325 | n/a | 774.707 KB | float32 | 8.795 ms / 10.131 ms | 4.23 KB | `not_measured_no_physical_power_meter_attached` |
+| Student Dynamic Quantized (qint8 runtime) | 189744 | n/a | 741.188 KB | float32 | 17.709 ms / 21.3 ms | 79.04 KB | `not_measured_no_physical_power_meter_attached` |
+| Expert Transformer (FP32 runtime) | 1285445 | n/a | 5021.27 KB | float32 | 13.519 ms / 15.913 ms | 4.66 KB | `not_measured_no_physical_power_meter_attached` |
 
 ## 2. Energy / Compute Cost per Correct Prediction (Proposed Cost-Aware Policy)
-- **Numerator (Total Compute Cost Units)**: `2741.15`
+- **Numerator (Total Compute Cost Units)**: `1339.8`
 - **Numerator (Measured Electrical Joules)**: `None` (`not_measured_proxy_cost_units_only`)
-- **Denominator (Number of Correct Predictions)**: `517` out of `615` evaluated test clips
-- **Compute Cost Units per Correct Prediction**: `5.302`
-- **Raspberry Pi Zero 2 W Assessment**: Constrained 512 MB RAM / Cortex-A53 target is suitable for the INT8 Student + Quality Gate (`13.44 KB` weights), whereas continuous on-device invocation of the full transformer/attention expert is not guaranteed real-time without offloading or selective gating.
+- **Denominator (Number of Correct Predictions)**: `587` out of `600` evaluated test clips
+- **Compute Cost Units per Correct Prediction**: `2.2825`
+- **Integer inference status**: `float32` runtime compute; PyTorch dynamic integer quantization (`torch.ao.quantization.quantize_dynamic`) executes integer linear GEMM operations on CPU. Calibrated temperature recalibration applied on held-out calibration split. Raspberry Pi Zero 2 W physical power-meter measurements pending.
+- **Complexity accounting**: MAC/FLOP counts are unavailable until exact operator-level accounting is added; parameter count is not used as a MAC proxy.

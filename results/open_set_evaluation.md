@@ -1,5 +1,3 @@
-> **STATUS: HISTORICAL OUTPUT — RECOMPUTE BEFORE CITATION.** These numbers predate the tie-aware ROC/AP implementation now on the fix branch. They are preserved for traceability only; use fresh output from the corrected pipeline, and evaluate truly held-out taxa separately from generic background noise.
-
 # Open-Set Recognition & Held-Out Species Evaluation (`results/open_set_evaluation.md`)
 
 ## 1. Score Direction & Evaluation Protocol
@@ -10,18 +8,18 @@
 
 | Method | AUROC | AUPR | FPR95 | Unknown Recall | False Known-Species Rate | Calibrated ECE | Brier Score |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `msp` | 0.5554 | 0.5444 | 0.8748 | 0.1140 | 0.8860 | 0.0442 | 0.3277 |
-| `temperature_scaled` | 0.5712 | 0.5579 | 0.8797 | 0.1023 | 0.8977 | 0.0442 | 0.3277 |
-| `entropy` | 0.5743 | 0.5668 | 0.8780 | 0.1257 | 0.8743 | 0.0442 | 0.3277 |
-| `margin` | 0.5456 | 0.5362 | 0.8797 | 0.1009 | 0.8991 | 0.0442 | 0.3277 |
-| `prototype_distance` | 0.9478 | 0.9479 | 0.2520 | 0.8465 | 0.1535 | 0.0442 | 0.3277 |
-| `energy` | 0.6586 | 0.6125 | 0.9089 | 0.1316 | 0.8684 | 0.0442 | 0.3277 |
+| `msp` | 0.8458 | 0.8547 | 0.7417 | 0.6450 | 0.3550 | 0.0106 | 0.0370 |
+| `temperature_scaled` | 0.8711 | 0.8667 | 0.6083 | 0.6568 | 0.3432 | 0.0106 | 0.0370 |
+| `entropy` | 0.8221 | 0.8489 | 0.8067 | 0.6183 | 0.3817 | 0.0106 | 0.0370 |
+| `margin` | 0.8679 | 0.8710 | 0.5983 | 0.6657 | 0.3343 | 0.0106 | 0.0370 |
+| `prototype_distance` | 0.8949 | 0.8879 | 0.4600 | 0.6657 | 0.3343 | 0.0106 | 0.0370 |
+| `energy` | 0.6252 | 0.7132 | 0.9817 | 0.4098 | 0.5902 | 0.0106 | 0.0370 |
 
 ## 3. Leave-One-Species-Out Downstream Rotations
 
 | Held-Out Bird Species | Open-Set AUROC | Open-Set AUPR | FPR95 | Held-Out Species Rejection Rate | False Known-Species Assignment Rate |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| `common_waxbill` | 0.9196 | 0.9468 | 0.4297 | 0.4359 | 0.5641 |
-| `red_billed_quelea` | 0.8832 | 0.9377 | 0.6439 | 0.2775 | 0.7225 |
-| `village_weaver` | 0.8929 | 0.9380 | 0.5156 | 0.1257 | 0.8743 |
-| `yellow_fronted_canary` | 0.9205 | 0.9499 | 0.4147 | 0.2071 | 0.7929 |
+| `common_waxbill` | 0.9244 | 0.9525 | 0.3326 | 0.4425 | 0.5575 |
+| `red_billed_quelea` | 0.9137 | 0.9536 | 0.4818 | 0.4599 | 0.5401 |
+| `village_weaver` | 0.8769 | 0.9290 | 0.5584 | 0.0675 | 0.9325 |
+| `yellow_fronted_canary` | 0.9020 | 0.9415 | 0.4428 | 0.0365 | 0.9635 |

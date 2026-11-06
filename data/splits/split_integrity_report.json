@@ -4,10 +4,10 @@
   "leaked_waveform_shas": {},
   "leaked_recording_sessions": {},
   "split_counts": {
-    "test": 1299,
-    "calibration": 867,
-    "train": 5198,
-    "val": 1298
+    "train": 5108,
+    "calibration": 852,
+    "val": 1276,
+    "test": 1276
   },
-  "split_manifest_sha256": "b8459488b626e04a51b3bf078ec873148fbcb304c65388bb7b7d9b4e8d07cf62"
+  "split_manifest_sha256": "cbe20039cbde2a228b099f414a2fc3d33dac893896870fa54ceeb75cfe289764"
 }

@@ -45,6 +45,7 @@ Thumbs.db
 
 # Large datasets & raw audio (preserve manifests, audited summaries, and splits)
 data/raw/
+data/synthetic_fixture/
 data/external/*.zip
 data/external/
 data/features/
