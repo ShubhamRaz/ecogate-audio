@@ -252,10 +252,17 @@ def evaluate_routing_policies_on_split(
     if random_call_count:
         rand_mask[rng.choice(n, size=random_call_count, replace=False)] = True
 
-    # Offline oracle (upper bound only - uses true test loss reduction)
+    # Offline oracle (upper bound only - uses true test loss reduction).
+    # Select no more than the effective budget and only when the expert reduces loss.
     true_d = s_loss - e_loss
-    oracle_thresh = float(np.quantile(true_d, 1.0 - target_call_rate)) if 0 < target_call_rate < 1 else 0.0
-    oracle_mask = (true_d > max(0.0, oracle_thresh))
+    oracle_mask = np.zeros(n, dtype=bool)
+    oracle_slots = min(n, int(np.floor(effective_target_rate * n)))
+    positive_benefit_indices = np.flatnonzero(true_d > 0.0)
+    if oracle_slots and positive_benefit_indices.size:
+        oracle_order = positive_benefit_indices[
+            np.argsort(-true_d[positive_benefit_indices], kind="mergesort")
+        ]
+        oracle_mask[oracle_order[:oracle_slots]] = True
 
     policies = {
         "student_only": np.zeros(n, dtype=bool),
