@@ -226,7 +226,7 @@ def evaluate_routing_policies_on_split(
 
     # Proposed cost-aware benefit router (incorporates lambda * expert_cost floor + budget cap)
     ca_bc = BudgetController()
-    ca_bc.optimize_threshold_on_calibration(est_b_cal, cal_s_loss, cal_e_loss, lambda_cost=0.15, target_call_rate=target_call_rate)
+    ca_bc.optimize_threshold_on_calibration(est_b_cal, cal_s_loss, cal_e_loss, lambda_cost=0.01, target_call_rate=target_call_rate)
 
     rng = np.random.RandomState(seed)
     rand_mask = rng.uniform(0.0, 1.0, size=n) < target_call_rate
