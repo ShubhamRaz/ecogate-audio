@@ -113,7 +113,7 @@ def generate_plots(
     cov_r = [pt["coverage"] for pt in rc_curve_routed["curve"]]
     risk_r = [pt["selective_risk"] for pt in rc_curve_routed["curve"]]
     ax.plot(cov_s, risk_s, "o--", label=f"Student Only (AURC={rc_curve_student['aurc']:.3f})", color="#64748b")
-    ax.plot(cov_r, risk_r, "s-", label=f"Cost-Aware Selective Routing (AURC={rc_curve_routed['aurc']:.3f})", color="#059669", linewidth=2)
+    ax.plot(cov_r, risk_r, "s-", label=f"Budgeted Benefit Routing (AURC={rc_curve_routed['aurc']:.3f})", color="#059669", linewidth=2)
     ax.set_xlabel("Coverage")
     ax.set_ylabel("Selective Risk (Decision Loss)")
     ax.set_title("Risk-Coverage Trade-Off Curve")
@@ -192,8 +192,8 @@ def write_summary_markdown_reports(
 
     # 2. results/baseline_comparison.md
     m_mfcc = baseline_metrics["mfcc_logreg"]
-    m_stud = baseline_metrics["student_cnn_fp32"]
-    m_quant = baseline_metrics["student_cnn_int8"]
+    m_stud = baseline_metrics["student_fixed_feature_fp32"]
+    m_quant = baseline_metrics["student_compressed_weights_fp32_runtime"]
     m_exp = baseline_metrics["expert_multiscale"]
     (results_dir / "baseline_comparison.md").write_text(
         f"""# Audio-Only Baseline & Model Tier Comparison (`results/baseline_comparison.md`)
@@ -203,14 +203,13 @@ def write_summary_markdown_reports(
 | Model Tier | Model ID | Accuracy | Macro-F1 | Weighted-F1 | Balanced Accuracy | Parameters |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | Classical Baseline | `{m_mfcc['model_id']}` | {m_mfcc['accuracy']:.4f} | {m_mfcc['macro_f1']:.4f} | {m_mfcc['weighted_f1']:.4f} | {m_mfcc['balanced_accuracy']:.4f} | {m_mfcc['parameters']} |
-| Lightweight Student (FP32) | `{m_stud['model_id']}` | {m_stud['accuracy']:.4f} | {m_stud['macro_f1']:.4f} | {m_stud['weighted_f1']:.4f} | {m_stud['balanced_accuracy']:.4f} | {m_stud['parameters']} |
-| Quantized Student (INT8 Recalibrated) | `{m_quant['model_id']}` | {m_quant['accuracy']:.4f} | {m_quant['macro_f1']:.4f} | {m_quant['weighted_f1']:.4f} | {m_quant['balanced_accuracy']:.4f} | {m_quant['parameters']} |
-| Strong Expert Model | `{m_exp['model_id']}` | {m_exp['accuracy']:.4f} | {m_exp['macro_f1']:.4f} | {m_exp['weighted_f1']:.4f} | {m_exp['balanced_accuracy']:.4f} | {m_exp['parameters']} |
+| Fixed-feature student (FP32 runtime) | `{m_stud['model_id']}` | {m_stud['accuracy']:.4f} | {m_stud['macro_f1']:.4f} | {m_stud['weighted_f1']:.4f} | {m_stud['balanced_accuracy']:.4f} | {m_stud['parameters']} |
+| Compressed-weight student (INT8 storage / FP32 runtime) | `{m_quant['model_id']}` | {m_quant['accuracy']:.4f} | {m_quant['macro_f1']:.4f} | {m_quant['weighted_f1']:.4f} | {m_quant['balanced_accuracy']:.4f} | {m_quant['parameters']} |
+| Fixed-feature expert model (not AST) | `{m_exp['model_id']}` | {m_exp['accuracy']:.4f} | {m_exp['macro_f1']:.4f} | {m_exp['weighted_f1']:.4f} | {m_exp['balanced_accuracy']:.4f} | {m_exp['parameters']} |
 
-## 2. Expert Uplift Verification Gate
-- **Expert vs. Student Macro-F1 Uplift**: `{m_exp['macro_f1'] - m_stud['macro_f1']:+.4f}`
-- **Minimum Required Uplift (config)**: `+0.0200`
-- **Gate Status**: {"✅ PASS — Expert demonstrates sufficient positive uplift over student; selective invocation is justified." if (m_exp['macro_f1'] - m_stud['macro_f1']) >= 0.02 else ("⚠️ MARGINAL — Expert shows positive but sub-threshold uplift; check training data size." if (m_exp['macro_f1'] - m_stud['macro_f1']) > 0.0 else "❌ FAIL — Expert does NOT outperform student on this dataset; do NOT rely on expert gate for uplift claim.")}
+## 2. Descriptive Model Difference
+- **Expert vs. Student Macro-F1 Difference**: `{m_exp['macro_f1'] - m_stud['macro_f1']:+.4f}`
+- This is a descriptive result from one held-out partition, not a pre-registered acceptance gate or proof of generalization. Report per-group uncertainty and replicate on a source-independent archive before making superiority claims.
 """,
         encoding="utf-8",
     )
@@ -430,12 +429,12 @@ def main() -> None:
     ca_arr = prepare_arrays(cal_s, normalizer)
     te_arr = prepare_arrays(test_s, normalizer)
 
-    # 1. Train MFCC Baseline, Student CNN, and Strong Expert
-    print("=== [Step 1/11] Training MFCC Baseline, Student CNN, and Expert Model ===", flush=True)
+    # 1. Fit MFCC Baseline, Fixed-Feature Student, and Fixed-Feature Expert
+    print("=== [Step 1/11] Training MFCC baseline and fixed-feature student/expert models ===", flush=True)
     mfcc_model = MFCCBaselineModel(seed=42)
     mfcc_model.fit(tr_arr["mfccs"], tr_arr["y_known"], tr_arr["is_bird"])
 
-    print("  Fitting Student CNN...", flush=True)
+    print("  Fitting fixed-feature student model...", flush=True)
     student = LightweightStudentCNN(seed=42)
     student.fit(tr_arr["mels"], tr_arr["y_known"], tr_arr["is_bird"], va_arr["mels"], va_arr["y_known"], epochs=15)
     student.save_checkpoint(PROJECT_ROOT / "checkpoints" / "student_best.npz")
@@ -493,12 +492,12 @@ def main() -> None:
             "parameters": mfcc_model.param_count(),
             **compute_classification_metrics(te_arr["y_known"][te_k_mask], te_mfcc_out.predicted_class[te_k_mask]),
         },
-        "student_cnn_fp32": {
+        "student_fixed_feature_fp32": {
             "model_id": student.model_id,
             "parameters": student.param_count(),
             **compute_classification_metrics(te_arr["y_known"][te_k_mask], te_s_out.predicted_class[te_k_mask]),
         },
-        "student_cnn_int8": {
+        "student_compressed_weights_fp32_runtime": {
             "model_id": quant_student.model_id,
             "parameters": student.param_count(),
             **compute_classification_metrics(te_arr["y_known"][te_k_mask], te_q_out.predicted_class[te_k_mask]),
