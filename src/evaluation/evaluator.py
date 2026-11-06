@@ -199,6 +199,16 @@ def group_bootstrap_ci(
     Compute cluster/group-level bootstrap mean and confidence interval so correlated clips
     from the same recording session or duplicate group are resampled together.
     """
+    group_ids = [str(gid) for gid in group_ids]
+    sample_values = np.asarray(sample_values, dtype=np.float64).reshape(-1)
+    if len(group_ids) != sample_values.size:
+        raise ValueError("group_ids and sample_values must have identical lengths.")
+    if not np.all(np.isfinite(sample_values)):
+        raise ValueError("sample_values must contain only finite values.")
+    if n_boot < 1:
+        raise ValueError("n_boot must be at least 1.")
+    if not 0.0 < ci < 1.0:
+        raise ValueError("ci must be between 0 and 1.")
     rng = np.random.RandomState(seed)
     group_to_idxs: Dict[str, List[int]] = {}
     for idx, gid in enumerate(group_ids):
