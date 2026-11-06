@@ -154,19 +154,39 @@ def compute_risk_coverage_curve(
     losses: np.ndarray,
     coverages: List[float] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
 ) -> Dict[str, Any]:
-    """Compute selective risk across coverage levels and Area Under the Risk-Coverage Curve (AURC)."""
-    order = np.argsort(-confidences)
-    sorted_losses = losses[order]
-    n = losses.size
-    points = []
-    for cov in coverages:
-        k = max(1, int(round(cov * n)))
-        risk = float(np.mean(sorted_losses[:k]))
-        points.append({"coverage": round(cov, 2), "selective_risk": round(risk, 4), "abstention_rate": round(1.0 - cov, 2)})
-    all_risks = np.cumsum(sorted_losses) / np.arange(1, n + 1)
-    aurc = float(np.mean(all_risks))
-    return {"aurc": round(aurc, 4), "curve": points}
+    """Compute selective risk among the highest-confidence retained predictions."""
+    conf = np.asarray(confidences, dtype=np.float64).reshape(-1)
+    loss = np.asarray(losses, dtype=np.float64).reshape(-1)
+    if conf.shape != loss.shape:
+        raise ValueError("confidences and losses must have identical shapes.")
+    if conf.size == 0:
+        return {"aurc": 0.0, "curve": []}
+    if not np.all(np.isfinite(conf)) or not np.all(np.isfinite(loss)):
+        raise ValueError("confidences and losses must contain only finite values.")
+    if np.any(loss < 0):
+        raise ValueError("losses must be non-negative.")
+    if not coverages:
+        raise ValueError("At least one coverage level is required.")
 
+    order = np.argsort(-conf, kind="mergesort")
+    sorted_losses = loss[order]
+    n = loss.size
+    points = []
+    for coverage in coverages:
+        coverage = float(coverage)
+        if not 0.0 < coverage <= 1.0:
+            raise ValueError("Each coverage must be in (0, 1].")
+        k = min(n, max(1, int(np.ceil(coverage * n))))
+        actual_coverage = k / n
+        risk = float(np.mean(sorted_losses[:k]))
+        points.append({
+            "coverage": round(actual_coverage, 6),
+            "selective_risk": round(risk, 6),
+            "abstention_rate": round(1.0 - actual_coverage, 6),
+        })
+    cumulative_risk = np.cumsum(sorted_losses) / np.arange(1, n + 1)
+    aurc = float(np.mean(cumulative_risk))
+    return {"aurc": round(aurc, 6), "curve": points}
 
 def group_bootstrap_ci(
     group_ids: List[str],
