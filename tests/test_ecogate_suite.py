@@ -273,7 +273,27 @@ class TestEcoGateAudioSuite(unittest.TestCase):
             student_probs, bird, entropy, margin, proto, snr, clipping, rms
         )
         self.assertLessEqual(int(np.sum(first_mask)), 2)
-        controller.record_batch(first_mask)
+        planned_expert_probs = np.tile(
+            np.array([[0.05, 0.85, 0.05, 0.05]], dtype=np.float64),
+            (int(np.sum(first_mask)), 1),
+        )
+        decisions = router.decide_batch(
+            student_probs=student_probs,
+            student_bird_prob=bird,
+            student_novelty=np.full(n, 0.1),
+            student_entropy=entropy,
+            student_margin=margin,
+            student_proto_dist=proto,
+            snr_db=snr,
+            clipping_ratio=clipping,
+            rms_energy=rms,
+            expert_probs=planned_expert_probs,
+            expert_bird_prob=np.full(int(np.sum(first_mask)), 0.98),
+            expert_novelty=np.full(int(np.sum(first_mask)), 0.1),
+            invoke_mask=first_mask,
+        )
+        self.assertEqual(sum(int(item.expert_invoked) for item in decisions), int(np.sum(first_mask)))
+        self.assertEqual(controller.expert_calls, int(np.sum(first_mask)))
 
         second_mask = router.plan_expert_invocations(
             student_probs, bird, entropy, margin, proto, snr, clipping, rms
