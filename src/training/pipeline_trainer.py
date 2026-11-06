@@ -285,6 +285,30 @@ def evaluate_routing_policies_on_split(
         "offline_oracle_upper_bound": oracle_mask,
     }
 
+    # Calibration-derived thresholds can exceed a configured cap under test-time
+    # distribution shift. Enforce the same hard per-test cap on every budgeted
+    # policy (the expert-only row remains an explicitly over-budget reference).
+    max_test_calls = min(n, int(np.floor(effective_target_rate * n)))
+    priorities = {
+        "random_routing": np.zeros(n, dtype=np.float64),
+        "fixed_confidence_routing": -np.asarray(s_nov_feats["raw_max_prob"]),
+        "entropy_routing": np.asarray(s_nov_feats["entropy"]),
+        "margin_routing": -np.asarray(s_nov_feats["raw_margin"]),
+        "prototype_distance_routing": np.asarray(s_nov_feats["prototype_distance"]),
+        "cost_blind_benefit_routing": np.asarray(est_b_test),
+        "proposed_cost_aware_routing": np.asarray(est_b_test),
+        "offline_oracle_upper_bound": np.asarray(true_d),
+    }
+    for policy_name, priority in priorities.items():
+        candidate_indices = np.flatnonzero(policies[policy_name])
+        if candidate_indices.size > max_test_calls:
+            keep = candidate_indices[
+                np.argsort(-priority[candidate_indices], kind="mergesort")[:max_test_calls]
+            ]
+            capped = np.zeros(n, dtype=bool)
+            capped[keep] = True
+            policies[policy_name] = capped
+
     known_mask = test_arr["y_known"] >= 0
     results: Dict[str, Dict[str, Any]] = {}
 
