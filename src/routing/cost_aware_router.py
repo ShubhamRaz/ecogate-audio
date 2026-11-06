@@ -190,6 +190,16 @@ class CostAwareRouter:
             if invoke_mask.size != n:
                 raise ValueError("invoke_mask must have one value per sample.")
 
+        # Apply quality and student bird-activity gates even when a caller supplies
+        # a custom mask; invalid/no-bird clips should not consume expert calls.
+        quality_ok = (
+            (np.asarray(clipping_ratio) <= self.max_clipping_ratio)
+            & (np.asarray(snr_db) >= self.min_snr_db)
+            & (np.asarray(rms_energy) >= 0.0002)
+        )
+        bird_ok = np.asarray(student_bird_prob) >= self.bird_activity_threshold
+        invoke_mask = np.asarray(invoke_mask, dtype=bool) & quality_ok & bird_ok
+
         # Expert results may be supplied either for the full batch or only for
         # indices selected by the pre-expert planner. Scatter sparse results into
         # student defaults so the expensive model need only run on selected clips.
