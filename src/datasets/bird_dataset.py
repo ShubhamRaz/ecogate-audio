@@ -117,6 +117,11 @@ def generate_reference_validation_archive(
     """
     rng = np.random.RandomState(seed)
     raw_dir = Path(raw_dir)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    # Explicit provenance marker: fixture audio must never be mistaken for research data.
+    (raw_dir / ".ecogate_synthetic_reference_fixture").write_text(
+        "synthetic_reference_validation=true\\nseed=" + str(seed) + "\\n", encoding="utf-8"
+    )
     sr = 32000
     dur = 3.0
     t = np.linspace(0.0, dur, int(sr * dur), endpoint=False)
